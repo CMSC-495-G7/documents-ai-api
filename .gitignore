@@ -1,0 +1,17 @@
+# Local settings, environments, and generated files
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+uploads/
+staticfiles/
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/

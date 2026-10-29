@@ -1,0 +1,6 @@
+# Human-maintained dependency ranges. Install requirements.txt for pinned versions.
+Django>=5.2.8,<5.3
+django-ninja>=1.4,<2
+django-environ>=0.12,<0.14
+psycopg[binary]>=3.2,<4
+pgvector>=0.4,<0.5

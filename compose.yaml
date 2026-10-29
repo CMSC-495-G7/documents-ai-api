@@ -1,0 +1,50 @@
+name: documents-ai-api
+
+services:
+  api:
+    build: .
+    init: true
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-dev-only-change-before-deploying-documents-ai}
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,[::1]
+      POSTGRES_DB: ${POSTGRES_DB:-documents_ai}
+      POSTGRES_USER: ${POSTGRES_USER:-documents_ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-documents_ai}
+      # Container-to-container traffic always uses the service name and internal port.
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+    ports:
+      - "127.0.0.1:${DOCUMENTS_AI_API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5).close()"
+      interval: 10s
+      timeout: 6s
+      start_period: 20s
+      retries: 5
+
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-documents_ai}
+      POSTGRES_USER: ${POSTGRES_USER:-documents_ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-documents_ai}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP stays unavailable while the image's temporary initialization server runs.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  db-data:
