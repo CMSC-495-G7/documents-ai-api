@@ -24,6 +24,8 @@ pydantic==2.14.1
     # via django-ninja
 pydantic-core==2.50.1
     # via pydantic
+pyjwt==2.10.1
+    # via -r requirements.in
 sqlparse==0.6.0
     # via django
 typing-extensions==4.16.0

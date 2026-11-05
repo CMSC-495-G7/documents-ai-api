@@ -15,3 +15,6 @@ staticfiles/
 .DS_Store
 .idea/
 .vscode/
+.mcp.json
+.claude
+.codex

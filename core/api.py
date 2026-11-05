@@ -5,7 +5,8 @@ from typing import Literal
 from django.db import DatabaseError, connection
 from ninja import Router, Schema
 
-router = Router(tags=["Health"])
+# No auth, the Docker healthcheck calls these.
+router = Router(tags=["Health"], auth=None)
 
 
 class HealthResponse(Schema):
