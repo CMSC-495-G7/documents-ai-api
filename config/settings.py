@@ -68,6 +68,18 @@ DATABASES = {
     },
 }
 
+# Has to be set before the first migrate, changing it later means wiping the db.
+AUTH_USER_MODEL = "users.User"
+
+JWT_ACCESS_TOKEN_MINUTES = env.int("JWT_ACCESS_TOKEN_MINUTES", default=15)
+JWT_REFRESH_TOKEN_DAYS = env.int("JWT_REFRESH_TOKEN_DAYS", default=7)
+
+# Used by seed_identity.
+SEED_ADMIN_EMAIL = env("SEED_ADMIN_EMAIL", default="admin@acme.example")
+SEED_ADMIN_PASSWORD = env("SEED_ADMIN_PASSWORD", default="")
+SEED_EMPLOYEE_EMAIL = env("SEED_EMPLOYEE_EMAIL", default="employee@acme.example")
+SEED_EMPLOYEE_PASSWORD = env("SEED_EMPLOYEE_PASSWORD", default="")
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},

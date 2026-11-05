@@ -7,8 +7,8 @@ ingestion, retrieval, chat, and API sign-in are not implemented yet.
 ## Django apps
 
 - `core`: API health checks and the migration that enables pgvector.
-- `users`: scaffold for user accounts and authentication features. Registered in
-  Django and included in the Docker image; no models or API endpoints yet.
+- `users`: workspaces, the custom `User` model (email login, `admin`/`employee`
+  role), JWT sign-in (`/api/auth/*`), role checks, and the `seed_identity` command.
 
 ## Requirements
 
@@ -72,6 +72,18 @@ docker compose ps
 
 Both `api` and `db` should show as healthy. A failed migration prevents the API
 from starting; check `docker compose logs api` for the error.
+
+## Test accounts and sign-in
+
+Create the Engineering workspace with one admin and one employee (safe to run again):
+
+```sh
+docker compose exec api python manage.py seed_identity
+```
+
+Emails and passwords come from `SEED_*` in `.env` (defaults are in `.env.example`).
+Sign in with `POST /api/auth/login`, then send `Authorization: Bearer <access>` on
+other requests. Every endpoint needs a token unless it sets `auth=None`.
 
 ## Check and test
 
