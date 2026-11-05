@@ -1,20 +1,49 @@
-# Local settings, environments, and generated files
-.env
-.env.*
-!.env.example
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-*.egg-info/
-uploads/
-staticfiles/
+# Django
+db.sqlite3
+db.sqlite3-journal
+media/
+local_settings.py
+*.log
+logs/
 
-# OS and editors
-.DS_Store
-.idea/
-.vscode/
-.mcp.json
-.claude
-.codex
+# Task queues and caches (Huey, Celery, Redis)
+huey*.db
+celerybeat-schedule
+dump.rdb
+appendonly.aof
+
+# Python tooling and builds
+venv/
+env/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+build/
+dist/
+.ipynb_checkpoints/
+
+# AI / ML artifacts
+models/
+*.gguf
+*.safetensors
+*.pt
+*.onnx
+.cache/
+chroma/
+.chroma/
+*.faiss
+vectorstore/
+embeddings_cache/
+eval_results/
+
+# Secrets and keys
+*.pem
+*.key
+credentials*.json
+service-account*.json
+kubeconfig
+
+# Frontend (if you have a JS build step)
+node_modules/
+fr
