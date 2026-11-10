@@ -9,6 +9,9 @@ ingestion, retrieval, chat, and API sign-in are not implemented yet.
 - `core`: API health checks and the migration that enables pgvector.
 - `users`: workspaces, the custom `User` model (email login, `admin`/`employee`
   role), JWT sign-in (`/api/auth/*`), role checks, and the `seed_identity` command.
+- `documents`: the `Document` model, `storage.py` (handles
+  uploaded files), and `/api/documents` (admins upload
+  PDF/DOCX up to 16 MB, lists their workspace's documents).
 
 ## Requirements
 

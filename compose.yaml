@@ -20,6 +20,7 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin-local-only}
       SEED_EMPLOYEE_EMAIL: ${SEED_EMPLOYEE_EMAIL:-employee@acme.example}
       SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-employee-local-only}
+      DOCUMENT_MAX_UPLOAD_MB: ${DOCUMENT_MAX_UPLOAD_MB:-16}
     ports:
       - "127.0.0.1:${DOCUMENTS_AI_API_PORT:-8000}:8000"
     volumes:
@@ -27,6 +28,9 @@ services:
       - ./config:/app/config
       - ./core:/app/core
       - ./users:/app/users
+      - ./documents:/app/documents
+      # Uploaded files, kept across restarts.
+      - uploads:/app/uploads
     command: sh -c "python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"
     depends_on:
       db:
@@ -60,3 +64,4 @@ services:
 
 volumes:
   db-data:
+  uploads:
