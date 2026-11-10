@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Cancel older runs on the same branch or PR when new commits arrive.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build API image
+        run: docker compose build api
+
+      # `run` starts the pgvector database and waits for its healthcheck first.
+      - name: Django system check
+        run: docker compose run --rm api python manage.py check
+
+      - name: Check for missing migrations
+        run: docker compose run --rm api python manage.py makemigrations --check --dry-run
+
+      - name: Run unit tests
+        run: docker compose run --rm api python manage.py test
+
+      - name: Show database logs
+        if: failure()
+        run: docker compose logs db
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down --volumes

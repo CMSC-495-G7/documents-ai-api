@@ -22,9 +22,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "ninja",  # Serves the interactive API documentation assets locally.
+    "ninja",  # Serves the interactive API documentation assets (local)
     "core.apps.CoreConfig",
     "users.apps.UsersConfig",
+    "documents.apps.DocumentsConfig",
 ]
 
 MIDDLEWARE = [
@@ -80,6 +81,9 @@ SEED_ADMIN_PASSWORD = env("SEED_ADMIN_PASSWORD", default="")
 SEED_EMPLOYEE_EMAIL = env("SEED_EMPLOYEE_EMAIL", default="employee@acme.example")
 SEED_EMPLOYEE_PASSWORD = env("SEED_EMPLOYEE_PASSWORD", default="")
 
+# Biggest upload POST /api/documents accepts.
+DOCUMENT_MAX_UPLOAD_MB = env.int("DOCUMENT_MAX_UPLOAD_MB", default=16)
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -94,5 +98,6 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
+# Uploaded files, the "uploads" volume in Docker.
 MEDIA_ROOT = BASE_DIR / "uploads"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

@@ -14,6 +14,10 @@ COPY manage.py ./
 COPY config/ ./config/
 COPY core/ ./core/
 COPY users/ ./users/
+COPY documents/ ./documents/
+
+# So the app user can write to the uploads volume.
+RUN mkdir -p /app/uploads && chown app:app /app/uploads
 
 USER app
 EXPOSE 8000
