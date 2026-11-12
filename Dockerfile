@@ -15,6 +15,7 @@ COPY config/ ./config/
 COPY core/ ./core/
 COPY users/ ./users/
 COPY documents/ ./documents/
+COPY ask/ ./ask/
 
 # So the app user can write to the uploads volume.
 RUN mkdir -p /app/uploads && chown app:app /app/uploads

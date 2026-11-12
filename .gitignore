@@ -47,3 +47,5 @@ kubeconfig
 # Frontend (if you have a JS build step)
 node_modules/
 fr
+
+.env
