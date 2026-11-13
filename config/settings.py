@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "core.apps.CoreConfig",
     "users.apps.UsersConfig",
     "documents.apps.DocumentsConfig",
+    "ask.apps.AskConfig",
 ]
 
 MIDDLEWARE = [
@@ -83,6 +84,26 @@ SEED_EMPLOYEE_PASSWORD = env("SEED_EMPLOYEE_PASSWORD", default="")
 
 # Biggest upload POST /api/documents accepts.
 DOCUMENT_MAX_UPLOAD_MB = env.int("DOCUMENT_MAX_UPLOAD_MB", default=16)
+
+# POST /api/ask: retrieval and an OpenAI-compatible embedding/chat provider.
+# Defaults use the Google Gemini free tier. Set GEMINI_API_KEY once, or use the
+# ASK_* keys/URLs to point at any other OpenAI-compatible provider.
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
+GEMINI_BASE_URL = env(
+    "GEMINI_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai"
+)
+ASK_EMBEDDING_MODEL = env("ASK_EMBEDDING_MODEL", default="gemini-embedding-2")
+ASK_EMBEDDING_DIMENSIONS = env.int("ASK_EMBEDDING_DIMENSIONS", default=3072)
+ASK_EMBEDDING_API_KEY = env("ASK_EMBEDDING_API_KEY", default="") or GEMINI_API_KEY
+ASK_EMBEDDING_BASE_URL = env("ASK_EMBEDDING_BASE_URL", default=GEMINI_BASE_URL)
+ASK_EMBEDDING_TIMEOUT_SECONDS = env.int("ASK_EMBEDDING_TIMEOUT_SECONDS", default=10)
+ASK_LLM_MODEL = env("ASK_LLM_MODEL", default="gemini-3.1-flash-lite")
+ASK_LLM_API_KEY = env("ASK_LLM_API_KEY", default="") or GEMINI_API_KEY
+ASK_LLM_BASE_URL = env("ASK_LLM_BASE_URL", default=GEMINI_BASE_URL)
+ASK_LLM_TIMEOUT_SECONDS = env.int("ASK_LLM_TIMEOUT_SECONDS", default=30)
+ASK_MAX_ANSWER_TOKENS = env.int("ASK_MAX_ANSWER_TOKENS", default=1024)
+ASK_MAX_CONTEXT_CHUNKS = env.int("ASK_MAX_CONTEXT_CHUNKS", default=6)
+ASK_SIMILARITY_CUTOFF = env.float("ASK_SIMILARITY_CUTOFF", default=0.35)
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

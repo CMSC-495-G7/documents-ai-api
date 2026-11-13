@@ -1,8 +1,8 @@
 # DocumentsAI API
 
 Local Django Ninja API with PostgreSQL 17 and pgvector. This is a development
-scaffold: health checks and interactive API documentation work; document
-ingestion, retrieval, chat, and API sign-in are not implemented yet.
+scaffold: health checks, interactive API documentation, sign-in, document upload,
+and question answering work; background document ingestion is not implemented yet.
 
 ## Django apps
 
@@ -12,6 +12,9 @@ ingestion, retrieval, chat, and API sign-in are not implemented yet.
 - `documents`: the `Document` model, `storage.py` (handles
   uploaded files), and `/api/documents` (admins upload
   PDF/DOCX up to 16 MB, lists their workspace's documents).
+- `ask`: document chunks with embeddings, saved answers and citations, and
+  `POST /api/ask` (searches ready documents in the user's workspace, cites the
+  chunks it used, and skips the LLM below the similarity cutoff).
 
 ## Requirements
 
@@ -87,6 +90,27 @@ docker compose exec api python manage.py seed_identity
 Emails and passwords come from `SEED_*` in `.env` (defaults are in `.env.example`).
 Sign in with `POST /api/auth/login`, then send `Authorization: Bearer <access>` on
 other requests. Every endpoint needs a token unless it sets `auth=None`.
+
+## Ask a question
+
+`POST /api/ask` takes `{"question": "How many vacation days do I get?"}` and
+returns the answer, the model name, and the cited chunks (document title, page /
+slide / row range, and chunk ID). It only searches `ready` documents in the user's
+workspace and saves every question, answer, and citation.
+
+The defaults use Google Gemini's free tier. Get a key at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) and add it to
+`.env`:
+
+```sh
+GEMINI_API_KEY=your-key
+```
+
+You can also point the `ASK_*_BASE_URL` / `ASK_*_MODEL` values at any other
+OpenAI-compatible provider (see `.env.example`). Without an API key, the endpoint
+returns a clear 502 instead of calling out. If the best chunk scores below
+`ASK_SIMILARITY_CUTOFF`, the LLM is skipped and the answer is
+`"I couldn't find this in the documents"` with no citations.
 
 ## Check and test
 
