@@ -1,4 +1,5 @@
 import io
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from pypdf import PdfWriter
@@ -8,6 +9,7 @@ from documents.extraction import (
     BROKEN_PDF,
     LOCKED_PDF,
     NO_TEXT,
+    OVERSIZED_DOCX,
     ExtractionError,
     extract_pages,
 )
@@ -103,6 +105,15 @@ class DocxSectionTests(SimpleTestCase):
     def test_damaged_docx(self):
         with self.assertRaisesMessage(ExtractionError, BROKEN_DOCX):
             extract(docx_bytes(), "docx")
+
+    def test_docx_archive_limits_are_checked_before_parsing(self):
+        content = docx_with(("paragraph", "Dental"))
+        for limit in ("MAX_DOCX_ENTRIES", "MAX_DOCX_UNCOMPRESSED_BYTES"):
+            with self.subTest(limit=limit), patch(f"documents.extraction.{limit}", 1):
+                with patch("documents.extraction.docx.Document") as parse:
+                    with self.assertRaisesMessage(ExtractionError, OVERSIZED_DOCX):
+                        extract(content, "docx")
+                parse.assert_not_called()
 
 
 class OtherTypeTests(SimpleTestCase):

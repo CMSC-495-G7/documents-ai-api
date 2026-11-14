@@ -5,8 +5,10 @@ tasks.py queues it. Tests call process_document() straight.
 
 import logging
 import time
+from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core import llm
@@ -18,45 +20,57 @@ from documents.storage import open_file
 logger = logging.getLogger(__name__)
 
 SOMETHING_WENT_WRONG = "Something went wrong while processing this file. Try uploading it again."
+PROCESSING_LEASE = timedelta(minutes=30)
+
+
+def expired_processing(now):
+    return Q(status=Document.Status.PROCESSING, updated_at__lte=now - PROCESSING_LEASE)
 
 
 def process_document(document_id):
-    document = Document.objects.filter(pk=document_id).first()
+    document = Document.objects.filter(
+        Q(status=Document.Status.QUEUED) | expired_processing(timezone.now()),
+        pk=document_id,
+    ).first()
     if document is None:
-        logger.info("Document %s was deleted before it was processed", document_id)
         return
 
     started = time.monotonic()
-    set_status(document, Document.Status.PROCESSING)
+    if not set_status(document, Document.Status.PROCESSING):
+        return
     try:
         with open_file(document.file_path) as file:
             pages = extract_pages(file, document.file_type)
         chunks = split_into_chunks(pages)
         vectors = llm.embed([chunk.text for chunk in chunks])
-        save_chunks(document, chunks, vectors)
+        if not save_chunks(document, chunks, vectors):
+            return
     except Exception as error:
         set_status(document, Document.Status.FAILED, failure_message(error))
         return
 
-    set_status(document, Document.Status.READY)
     seconds = time.monotonic() - started
     logger.info("Document %s: %s chunks in %.1f s", document.pk, len(chunks), seconds)
 
 
 def set_status(document, status, error_message=""):
-    """Saves the new status and logs the change.
-
-    Uses update() so a document deleted mid-job is skipped.
-    """
+    """Compare and update the status using the timestamp of the current claim."""
     old_status = document.status
-    document.status = status
-    document.error_message = error_message
-    Document.objects.filter(pk=document.pk).update(
+    updated_at = timezone.now()
+    updated = Document.objects.filter(
+        pk=document.pk, status=old_status, updated_at=document.updated_at,
+    ).update(
         status=status,
         error_message=error_message,
-        updated_at=timezone.now(),
+        updated_at=updated_at,
     )
+    if not updated:
+        return False
+    document.status = status
+    document.error_message = error_message
+    document.updated_at = updated_at
     logger.info("Document %s: %s -> %s", document.pk, old_status, status)
+    return True
 
 
 def failure_message(error):
@@ -68,14 +82,16 @@ def failure_message(error):
 
 
 def save_chunks(document, chunks, vectors):
-    """Replaces the document's chunks, all or nothing."""
+    """Publish the chunks and ready status together while the worker owns the claim."""
     for chunk, vector in zip(chunks, vectors, strict=True):
         chunk.document = document
         chunk.workspace_id = document.workspace_id
         chunk.embedding = vector
     with transaction.atomic():
-        # Lock the row so a delete waits until we're done. Deleted already? Skip.
-        if Document.objects.select_for_update().filter(pk=document.pk).first() is None:
-            return
+        if not Document.objects.select_for_update().filter(
+            pk=document.pk, status=Document.Status.PROCESSING, updated_at=document.updated_at,
+        ).first():
+            return False
         Chunk.objects.filter(document=document).delete()
         Chunk.objects.bulk_create(chunks)
+        return set_status(document, Document.Status.READY)

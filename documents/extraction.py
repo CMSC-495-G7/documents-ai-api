@@ -1,6 +1,7 @@
 """Pulls the text out of a saved file, one Page at a time."""
 
 from dataclasses import dataclass
+from zipfile import ZipFile
 
 import docx
 from docx.text.paragraph import Paragraph
@@ -13,6 +14,9 @@ NO_TEXT = "No text found in this file. Scanned PDFs (pictures of text) aren't su
 BROKEN_PDF = "This PDF couldn't be read. It may be damaged."
 LOCKED_PDF = "This PDF is password protected. Remove the password and upload it again."
 BROKEN_DOCX = "This DOCX couldn't be read. It may be damaged."
+OVERSIZED_DOCX = "This DOCX contains too many files or expands to more than 64 MB."
+MAX_DOCX_ENTRIES = 2048
+MAX_DOCX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 
 
 class ExtractionError(Exception):
@@ -62,7 +66,17 @@ def extract_pdf(file):
 def extract_docx(file):
     """DOCX has no real pages, so each heading starts a new section, numbered from 1."""
     try:
+        with ZipFile(file) as archive:
+            entries = archive.infolist()
+            if (
+                len(entries) > MAX_DOCX_ENTRIES
+                or sum(entry.file_size for entry in entries) > MAX_DOCX_UNCOMPRESSED_BYTES
+            ):
+                raise ExtractionError(OVERSIZED_DOCX)
+        file.seek(0)
         document = docx.Document(file)
+    except ExtractionError:
+        raise
     except Exception as error:
         # python-docx raises a few different errors for broken files
         raise ExtractionError(BROKEN_DOCX) from error
