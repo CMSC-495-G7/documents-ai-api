@@ -17,7 +17,9 @@ class Command(BaseCommand):
         parser.add_argument("question")
         parser.add_argument("--workspace", default="engineering", help="Workspace slug")
 
-    def handle(self, *args, question, workspace, **options):
+    def handle(self, *args, **options):
+        question = options["question"]
+        workspace = options["workspace"]
         vector = llm.embed([question])[0]
         chunks = (
             Chunk.objects.filter(workspace__slug=workspace, embedding__isnull=False)
