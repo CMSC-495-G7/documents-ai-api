@@ -1,40 +1,55 @@
 name: documents-ai-api
 
+# api and worker run the same code with the same settings.
+# "<<: *app" below copies everything in this block into the service.
+x-app: &app
+  build: .
+  init: true
+  environment:
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-dev-only-change-before-deploying-documents-ai}
+    DJANGO_DEBUG: "True"
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,[::1]
+    POSTGRES_DB: ${POSTGRES_DB:-documents_ai}
+    POSTGRES_USER: ${POSTGRES_USER:-documents_ai}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-documents_ai}
+    # Container-to-container traffic always uses the service name and internal port.
+    POSTGRES_HOST: db
+    POSTGRES_PORT: "5432"
+    REDIS_URL: redis://redis:6379/0
+    HUEY_IMMEDIATE: ${HUEY_IMMEDIATE:-False}
+    JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-15}
+    JWT_REFRESH_TOKEN_DAYS: ${JWT_REFRESH_TOKEN_DAYS:-7}
+    SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@acme.example}
+    SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin-local-only}
+    SEED_EMPLOYEE_EMAIL: ${SEED_EMPLOYEE_EMAIL:-employee@acme.example}
+    SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-employee-local-only}
+    DOCUMENT_MAX_UPLOAD_MB: ${DOCUMENT_MAX_UPLOAD_MB:-16}
+    LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+    CHAT_MODEL: ${CHAT_MODEL:-gpt-5-mini}
+    LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-50}
+    EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-100}
+  volumes:
+    - ./manage.py:/app/manage.py
+    - ./config:/app/config
+    - ./core:/app/core
+    - ./users:/app/users
+    - ./documents:/app/documents
+    # Uploaded files, kept across restarts. The worker reads them too.
+    - uploads:/app/uploads
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   api:
-    build: .
-    init: true
-    environment:
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-dev-only-change-before-deploying-documents-ai}
-      DJANGO_DEBUG: "True"
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,[::1]
-      POSTGRES_DB: ${POSTGRES_DB:-documents_ai}
-      POSTGRES_USER: ${POSTGRES_USER:-documents_ai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-documents_ai}
-      # Container-to-container traffic always uses the service name and internal port.
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-15}
-      JWT_REFRESH_TOKEN_DAYS: ${JWT_REFRESH_TOKEN_DAYS:-7}
-      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@acme.example}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin-local-only}
-      SEED_EMPLOYEE_EMAIL: ${SEED_EMPLOYEE_EMAIL:-employee@acme.example}
-      SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-employee-local-only}
-      DOCUMENT_MAX_UPLOAD_MB: ${DOCUMENT_MAX_UPLOAD_MB:-16}
+    <<: *app
     ports:
       - "127.0.0.1:${DOCUMENTS_AI_API_PORT:-8000}:8000"
-    volumes:
-      - ./manage.py:/app/manage.py
-      - ./config:/app/config
-      - ./core:/app/core
-      - ./users:/app/users
-      - ./documents:/app/documents
-      # Uploaded files, kept across restarts.
-      - uploads:/app/uploads
     command: sh -c "python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test:
         - CMD
@@ -45,6 +60,20 @@ services:
       timeout: 6s
       start_period: 20s
       retries: 5
+
+  # Runs the background jobs (process_document). Restart it after editing job code.
+  worker:
+    <<: *app
+    command: python manage.py run_huey
+
+  # The job queue.
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   db:
     image: pgvector/pgvector:pg17

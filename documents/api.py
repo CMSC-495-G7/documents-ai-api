@@ -10,6 +10,7 @@ from documents.file_types import detect_file_type
 from documents.models import Document
 from documents.schemas import DocumentOut
 from documents.storage import delete_file, save_file
+from documents.tasks import process_document
 from users.permissions import IsAdmin, workspace_queryset
 from users.schemas import ErrorOut
 
@@ -48,13 +49,16 @@ def upload_document(request, file: File[UploadedFile]):
         # Don't leave a file with no row
         delete_file(path)
         raise
+
+    # The worker's recovery task picks up queued rows if this enqueue fails.
+    transaction.on_commit(lambda: process_document(document.id), robust=True)
     return 201, document
 
 
 @router.get("", response=list[DocumentOut])
 def list_documents(request):
     return workspace_queryset(Document, request.auth).select_related("uploaded_by")
-    
+
 
 @router.delete("/{document_id}", auth=IsAdmin(), response={204: None, 404: ErrorOut})
 def delete_document(request, document_id: int):
@@ -68,7 +72,9 @@ def delete_document(request, document_id: int):
     path = document.file_path
 
     with transaction.atomic():
+        # Chunks go too (CASCADE)
         document.delete()
-        transaction.on_commit(lambda: delete_file(path))
+        # Only once the row is gone. A file that can't be deleted is logged, still 204
+        transaction.on_commit(lambda: delete_file(path), robust=True)
 
     return 204, None

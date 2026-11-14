@@ -38,6 +38,7 @@ embeddings_cache/
 eval_results/
 
 # Secrets and keys
+*.env
 *.pem
 *.key
 credentials*.json

@@ -1,0 +1,7 @@
+# Everyone on the team reviews everything. GitHub requests a review from each
+# owner on every PR except the person who opened it.
+#
+# Later lines win over earlier ones, so a narrower rule can be added below this
+# one to route a folder to particular people, for example:
+#   /src/pages/  @radixp0int
+*  @radixp0int @dininni8319 @jtpercival25-lab
