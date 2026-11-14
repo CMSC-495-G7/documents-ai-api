@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.test import TestCase, override_settings
 
 from documents.models import Document
@@ -101,3 +103,36 @@ class UploadPermissionTests(UploadTestCase):
         token = create_access_token(self.admin)
         response = self.client.post("/api/documents", {}, headers=auth_header(token))
         self.assertEqual(response.status_code, 422)
+
+
+class QueueProcessingTests(UploadTestCase):
+    @patch("documents.api.process_document")
+    def test_good_upload_queues_the_job(self, process_document):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.upload(pdf_upload())
+
+        process_document.assert_called_once_with(response.json()["id"])
+
+    @patch("documents.api.process_document")
+    def test_answers_before_the_job_runs(self, process_document):
+        # The job only runs after the row is saved, the response says queued
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            response = self.upload(pdf_upload())
+
+        self.assertEqual(response.json()["status"], "queued")
+        self.assertEqual(len(callbacks), 1)
+        process_document.assert_not_called()
+
+    @patch("documents.api.process_document")
+    def test_rejected_upload_queues_nothing(self, process_document):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.upload(text_upload())
+        process_document.assert_not_called()
+
+    @patch("documents.api.process_document", side_effect=ConnectionError("redis is down"))
+    def test_upload_still_works_if_the_queue_is_down(self, process_document):
+        with self.assertLogs(level="ERROR"), self.captureOnCommitCallbacks(execute=True):
+            response = self.upload(pdf_upload())
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Document.objects.get().status, "queued")

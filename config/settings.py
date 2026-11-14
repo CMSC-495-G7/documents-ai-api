@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "ninja",  # Serves the interactive API documentation assets (local)
+    "huey.contrib.djhuey",
     "core.apps.CoreConfig",
     "users.apps.UsersConfig",
     "documents.apps.DocumentsConfig",
@@ -70,6 +71,9 @@ DATABASES = {
     },
 }
 
+# Tests force the fake LLM and run jobs right away.
+TEST_RUNNER = "config.test_runner.TestRunner"
+
 # Has to be set before the first migrate, changing it later means wiping the db.
 AUTH_USER_MODEL = "users.User"
 
@@ -105,6 +109,25 @@ ASK_MAX_ANSWER_TOKENS = env.int("ASK_MAX_ANSWER_TOKENS", default=1024)
 ASK_MAX_CONTEXT_CHUNKS = env.int("ASK_MAX_CONTEXT_CHUNKS", default=6)
 ASK_SIMILARITY_CUTOFF = env.float("ASK_SIMILARITY_CUTOFF", default=0.35)
 
+# Background jobs. The worker is "python manage.py run_huey".
+HUEY = {
+    "huey_class": "huey.RedisHuey",
+    "name": "documents-ai",
+    "url": env("REDIS_URL", default="redis://127.0.0.1:6379/0"),
+    # True runs jobs inside the request, no Redis or worker needed.
+    "immediate": env.bool("HUEY_IMMEDIATE", default=False),
+    "consumer": {"workers": 2, "worker_type": "thread"},
+}
+
+# LLM and embeddings, only core/llm.py reads these. "fake" needs no key.
+LLM_PROVIDER = env("LLM_PROVIDER", default="fake")
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+EMBEDDING_MODEL = env("EMBEDDING_MODEL", default="text-embedding-3-small")
+CHAT_MODEL = env("CHAT_MODEL", default="gpt-5-mini")
+LLM_TIMEOUT_SECONDS = env.int("LLM_TIMEOUT_SECONDS", default=50)
+# How many chunks go in one embeddings request.
+EMBED_BATCH_SIZE = env.int("EMBED_BATCH_SIZE", default=100)
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -122,3 +145,19 @@ MEDIA_URL = "media/"
 # Uploaded files, the "uploads" volume in Docker.
 MEDIA_ROOT = BASE_DIR / "uploads"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Our own log lines (documents.*, core.*) go to the console with the time.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "timestamped": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "timestamped"},
+    },
+    "loggers": {
+        "documents": {"handlers": ["console"], "level": "INFO"},
+        "core": {"handlers": ["console"], "level": "INFO"},
+    },
+}

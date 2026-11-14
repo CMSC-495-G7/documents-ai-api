@@ -2,19 +2,34 @@
 
 Local Django Ninja API with PostgreSQL 17 and pgvector. This is a development
 scaffold: health checks, interactive API documentation, sign-in, document upload,
-and question answering work; background document ingestion is not implemented yet.
+background document ingestion, and question answering are available.
 
 ## Django apps
 
 - `core`: API health checks and the migration that enables pgvector.
 - `users`: workspaces, the custom `User` model (email login, `admin`/`employee`
   role), JWT sign-in (`/api/auth/*`), role checks, and the `seed_identity` command.
-- `documents`: the `Document` model, `storage.py` (handles
+- `documents`: the `Document` and `Chunk` models, `storage.py` (handles
   uploaded files), and `/api/documents` (admins upload
   PDF/DOCX up to 16 MB, lists their workspace's documents).
+  Each upload queues the `process_document` job (`tasks.py`), which pulls the
+  text out page by page, cuts it into chunks of up to 500 words, and stores
+  their embeddings in pgvector. `python manage.py search_chunks "question"`
+  prints the 5 closest chunks.
 - `ask`: document chunks with embeddings, saved answers and citations, and
   `POST /api/ask` (searches ready documents in the user's workspace, cites the
   chunks it used, and skips the LLM below the similarity cutoff).
+
+`core/llm.py` handles embedding calls for background ingestion. It uses
+`LLM_PROVIDER` from `.env`: `fake` (default, no key, used by every test) or
+`openai` (needs `OPENAI_API_KEY`).
+
+## Services
+
+`docker compose up` starts four containers: `api` (Django), `worker` (runs
+background jobs with Huey, `python manage.py run_huey`), `redis` (the job
+queue) and `db` (PostgreSQL + pgvector). The worker doesn't reload code by
+itself: run `docker compose restart worker` after editing job code.
 
 ## Requirements
 
@@ -69,14 +84,14 @@ The database is accessible only inside the Compose network; no host database
 port is needed. Database data is stored in this stack's named PostgreSQL volume
 and persists when containers are recreated.
 
-To start in the background and wait for both services to be healthy, use:
+To start in the background and wait for the services to be ready, use:
 
 ```sh
 docker compose up --build --wait
 docker compose ps
 ```
 
-Both `api` and `db` should show as healthy. A failed migration prevents the API
+`api`, `db` and `redis` should show as healthy, and `worker` as running. A failed migration prevents the API
 from starting; check `docker compose logs api` for the error.
 
 ## Test accounts and sign-in
