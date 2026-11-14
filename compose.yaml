@@ -21,6 +21,20 @@ services:
       SEED_EMPLOYEE_EMAIL: ${SEED_EMPLOYEE_EMAIL:-employee@acme.example}
       SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-employee-local-only}
       DOCUMENT_MAX_UPLOAD_MB: ${DOCUMENT_MAX_UPLOAD_MB:-16}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      ASK_EMBEDDING_MODEL: ${ASK_EMBEDDING_MODEL:-gemini-embedding-2}
+      ASK_EMBEDDING_DIMENSIONS: ${ASK_EMBEDDING_DIMENSIONS:-3072}
+      ASK_EMBEDDING_API_KEY: ${ASK_EMBEDDING_API_KEY:-}
+      ASK_EMBEDDING_BASE_URL: ${ASK_EMBEDDING_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      ASK_EMBEDDING_TIMEOUT_SECONDS: ${ASK_EMBEDDING_TIMEOUT_SECONDS:-10}
+      ASK_LLM_MODEL: ${ASK_LLM_MODEL:-gemini-3.1-flash-lite}
+      ASK_LLM_API_KEY: ${ASK_LLM_API_KEY:-}
+      ASK_LLM_BASE_URL: ${ASK_LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      ASK_LLM_TIMEOUT_SECONDS: ${ASK_LLM_TIMEOUT_SECONDS:-30}
+      ASK_MAX_ANSWER_TOKENS: ${ASK_MAX_ANSWER_TOKENS:-1024}
+      ASK_MAX_CONTEXT_CHUNKS: ${ASK_MAX_CONTEXT_CHUNKS:-6}
+      ASK_SIMILARITY_CUTOFF: ${ASK_SIMILARITY_CUTOFF:-0.35}
     ports:
       - "127.0.0.1:${DOCUMENTS_AI_API_PORT:-8000}:8000"
     volumes:
@@ -29,6 +43,7 @@ services:
       - ./core:/app/core
       - ./users:/app/users
       - ./documents:/app/documents
+      - ./ask:/app/ask
       # Uploaded files, kept across restarts.
       - uploads:/app/uploads
     command: sh -c "python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"
