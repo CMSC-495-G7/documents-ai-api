@@ -6,7 +6,7 @@ Usage: @router.post("/documents", auth=IsAdmin())
 from ninja.errors import HttpError
 
 from users.auth import JWTAuth
-from users.models import User, Workspace
+from users.models import User
 
 
 class IsEmployeeOrAdmin(JWTAuth):
@@ -21,7 +21,7 @@ class IsEmployeeOrAdmin(JWTAuth):
 
 
 class IsAdmin(IsEmployeeOrAdmin):
-        allowed_roles = {User.Role.ADMIN}
+    allowed_roles = {User.Role.ADMIN}
 
 
 def workspace_queryset(model, user):
