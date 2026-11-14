@@ -50,7 +50,7 @@ def upload_document(request, file: File[UploadedFile]):
         delete_file(path)
         raise
 
-    # Queue the job once the row is saved. If Redis is down it stays queued.
+    # The worker's recovery task picks up queued rows if this enqueue fails.
     transaction.on_commit(lambda: process_document(document.id), robust=True)
     return 201, document
 

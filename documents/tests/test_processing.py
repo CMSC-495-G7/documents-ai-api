@@ -1,16 +1,19 @@
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.utils import timezone
 
 from core.llm import EMBEDDING_DIMENSIONS, LLMError
 from documents.extraction import NO_TEXT, ExtractionError
 from documents.models import Chunk, Document
 from documents.processing import (
+    PROCESSING_LEASE,
     SOMETHING_WENT_WRONG,
     failure_message,
     process_document,
     set_status,
 )
+from documents.tasks import QUEUE_RECOVERY_DELAY, recover_documents
 from documents.tasks import process_document as process_document_task
 from documents.tests.factories import (
     TempStorageMixin,
@@ -143,10 +146,12 @@ class GoodDocumentTests(ProcessingTestCase):
         self.assertIn(f"Document {document.id}: processing -> ready", logs.output[1])
         self.assertIn("1 chunks in", logs.output[2])
 
-    def test_running_it_again_replaces_the_chunks(self):
+    def test_duplicate_delivery_skips_ready_document(self):
         document = make_saved_document(self.workspace, pdf_with("Dental", "Leave"))
         self.process(document)
-        self.process(document)
+        with patch("core.llm.embed") as embed:
+            self.process(document)
+        embed.assert_not_called()
         self.assertEqual(document.chunks.count(), 2)
 
     def test_embeds_in_batches(self):
@@ -221,3 +226,44 @@ class TaskTests(ProcessingTestCase):
         process_document_task(document.id)
         document.refresh_from_db()
         self.assertEqual(document.status, Status.READY)
+
+    def test_recovery_processes_old_queued_rows_and_expired_claims(self):
+        queued = make_saved_document(self.workspace, pdf_with("Queued"))
+        interrupted = make_saved_document(self.workspace, pdf_with("Interrupted"))
+        active = make_saved_document(self.workspace, pdf_with("Active"))
+        set_status(active, Status.PROCESSING)
+        fresh = make_saved_document(self.workspace, pdf_with("Fresh"))
+        now = timezone.now()
+        Document.objects.filter(pk=queued.pk).update(updated_at=now - QUEUE_RECOVERY_DELAY)
+        Document.objects.filter(pk=interrupted.pk).update(
+            status=Status.PROCESSING, updated_at=now - PROCESSING_LEASE,
+        )
+
+        recover_documents.call_local()
+
+        for document, expected in [
+            (queued, Status.READY),
+            (interrupted, Status.READY),
+            (active, Status.PROCESSING),
+            (fresh, Status.QUEUED),
+        ]:
+            document.refresh_from_db()
+            self.assertEqual(document.status, expected)
+
+    def test_expired_worker_cannot_overwrite_the_recovered_chunks(self):
+        document = make_saved_document(self.workspace, pdf_with("Dental"))
+
+        def reclaim_then_embed(texts):
+            Document.objects.filter(pk=document.pk).update(
+                updated_at=timezone.now() - PROCESSING_LEASE,
+            )
+            with patch("core.llm.embed", return_value=[[0.2] * EMBEDDING_DIMENSIONS]):
+                process_document(document.pk)
+            return [[0.1] * EMBEDDING_DIMENSIONS]
+
+        with patch("core.llm.embed", side_effect=reclaim_then_embed):
+            process_document(document.pk)
+
+        document.refresh_from_db()
+        self.assertEqual(document.status, Status.READY)
+        self.assertAlmostEqual(document.chunks.get().embedding[0], 0.2)
