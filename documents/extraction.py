@@ -13,6 +13,10 @@ from documents.file_types import DOCX, PDF
 NO_TEXT = "No text found in this file. Scanned PDFs (pictures of text) aren't supported yet."
 BROKEN_PDF = "This PDF couldn't be read. It may be damaged."
 LOCKED_PDF = "This PDF is password protected. Remove the password and upload it again."
+OVERSIZED_PDF = "This PDF has more than 500 pages or too much text to process."
+# pypdf already caps each unpacked stream at 75 MB, these cap the whole file
+MAX_PDF_PAGES = 500
+MAX_PDF_TEXT_CHARS = 5_000_000
 BROKEN_DOCX = "This DOCX couldn't be read. It may be damaged."
 OVERSIZED_DOCX = "This DOCX contains too many files or expands to more than 64 MB."
 MAX_DOCX_ENTRIES = 2048
@@ -55,11 +59,21 @@ def extract_pdf(file):
         raise ExtractionError(LOCKED_PDF)
 
     pages = []
-    for number, pdf_page in enumerate(reader.pages, start=1):
-        text = pdf_page.extract_text()
-        # Skip pages where extract_text() is only spaces
-        if text.strip():
-            pages.append(Page(number=number, text=text))
+    total_chars = 0
+    # Reading a page can fail too, including when pypdf hits one of its limits
+    try:
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise ExtractionError(OVERSIZED_PDF)
+        for number, pdf_page in enumerate(reader.pages, start=1):
+            text = pdf_page.extract_text()
+            total_chars += len(text)
+            if total_chars > MAX_PDF_TEXT_CHARS:
+                raise ExtractionError(OVERSIZED_PDF)
+            # Skip pages where extract_text() is only spaces
+            if text.strip():
+                pages.append(Page(number=number, text=text))
+    except PyPdfError as error:
+        raise ExtractionError(BROKEN_PDF) from error
     return pages
 
 

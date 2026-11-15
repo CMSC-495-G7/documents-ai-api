@@ -8,7 +8,7 @@ from datetime import timedelta
 from django.db.models import Q
 from django.utils import timezone
 from huey import crontab
-from huey.contrib.djhuey import db_periodic_task, db_task
+from huey.contrib.djhuey import HUEY, db_periodic_task, db_task
 
 from documents import processing
 from documents.models import Document
@@ -25,6 +25,10 @@ def process_document(document_id):
 @db_periodic_task(crontab(minute="*"))
 def recover_documents():
     """Reschedule uploads lost before or after the worker took the task."""
+    # Jobs still waiting means the worker is behind, not that uploads were lost.
+    # Queuing them again would only add copies, so wait until it catches up
+    if HUEY.pending_count():
+        return
     now = timezone.now()
     document_ids = Document.objects.filter(
         Q(status=Document.Status.QUEUED, updated_at__lte=now - QUEUE_RECOVERY_DELAY)

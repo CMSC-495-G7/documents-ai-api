@@ -250,6 +250,20 @@ class TaskTests(ProcessingTestCase):
             document.refresh_from_db()
             self.assertEqual(document.status, expected)
 
+    @patch("documents.tasks.HUEY.pending_count", return_value=3)
+    def test_recovery_waits_while_the_queue_is_backed_up(self, pending_count):
+        queued = make_saved_document(self.workspace, pdf_with("Queued"))
+        Document.objects.filter(pk=queued.pk).update(
+            updated_at=timezone.now() - QUEUE_RECOVERY_DELAY,
+        )
+
+        with patch("documents.tasks.process_document") as enqueue:
+            recover_documents.call_local()
+
+        enqueue.assert_not_called()
+        queued.refresh_from_db()
+        self.assertEqual(queued.status, Status.QUEUED)
+
     def test_expired_worker_cannot_overwrite_the_recovered_chunks(self):
         document = make_saved_document(self.workspace, pdf_with("Dental"))
 

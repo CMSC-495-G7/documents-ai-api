@@ -2,7 +2,8 @@ import io
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
-from pypdf import PdfWriter
+from pypdf import PageObject, PdfWriter
+from pypdf.errors import LimitReachedError
 
 from documents.extraction import (
     BROKEN_DOCX,
@@ -10,6 +11,7 @@ from documents.extraction import (
     LOCKED_PDF,
     NO_TEXT,
     OVERSIZED_DOCX,
+    OVERSIZED_PDF,
     ExtractionError,
     extract_pages,
 )
@@ -64,6 +66,20 @@ class PdfProblemTests(SimpleTestCase):
         writer.write(locked)
 
         self.assert_fails_with(locked.getvalue(), LOCKED_PDF)
+
+    @patch("documents.extraction.MAX_PDF_PAGES", 2)
+    def test_too_many_pages(self):
+        self.assert_fails_with(pdf_with("One", "Two", "Three"), OVERSIZED_PDF)
+
+    @patch("documents.extraction.MAX_PDF_TEXT_CHARS", 10)
+    def test_too_much_text(self):
+        self.assert_fails_with(pdf_with("Short", "This page pushes it over"), OVERSIZED_PDF)
+
+    def test_pypdf_limit_while_reading_a_page(self):
+        with patch.object(
+            PageObject, "extract_text", side_effect=LimitReachedError("Limit reached")
+        ):
+            self.assert_fails_with(pdf_with("Hello"), BROKEN_PDF)
 
 
 class DocxSectionTests(SimpleTestCase):
