@@ -43,7 +43,7 @@ QUESTIONS = [
         "expect_any": ["8:00", "6:00", "8 a.m."],
         "expect_doc": "it_support_troubleshooting_manual",
     },
-    {
+    { 
         "question": "How many sick-leave hours do full-time employees get each calendar year?",
         "expect_any": ["48 hours"],
         "expect_doc": "pto_policy",
