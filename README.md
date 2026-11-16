@@ -16,13 +16,16 @@ background document ingestion, and question answering are available.
   text out page by page, cuts it into chunks of up to 500 words, and stores
   their embeddings in pgvector. `python manage.py search_chunks "question"`
   prints the 5 closest chunks.
-- `ask`: document chunks with embeddings, saved answers and citations, and
-  `POST /api/ask` (searches ready documents in the user's workspace, cites the
-  chunks it used, and skips the LLM below the similarity cutoff).
+- `ask`: `POST /api/ask` searches the ready documents' chunks in the user's
+  workspace, skips the LLM below the similarity cutoff, and saves each answer
+  with its citations. `GET`/`PATCH /api/ask/settings` picks who writes the
+  answers (OpenAI or Gemini, admins only). `POST /api/ask/stream` is a
+  placeholder (501).
 
-`core/llm.py` handles embedding calls for background ingestion. It uses
-`LLM_PROVIDER` from `.env`: `fake` (default, no key, used by every test) or
-`openai` (needs `OPENAI_API_KEY`).
+`core/llm.py` makes every LLM call. Embeddings use OpenAI. Answers use OpenAI
+or Gemini, picked per workspace. `LLM_PROVIDER` in `.env` is `fake` (default, no
+key, used by every test) or `openai` (needs `OPENAI_API_KEY`, plus
+`GEMINI_API_KEY` to allow Gemini answers).
 
 ## Services
 

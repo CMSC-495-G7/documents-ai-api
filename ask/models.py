@@ -1,35 +1,8 @@
 from django.conf import settings
 from django.db import models
-from pgvector.django import VectorField
 
-from documents.models import Document
-from users.models import User, Workspace
-
-
-class Chunk(models.Model):
-    """A piece of a document, with its location and embedding, that answers can cite."""
-
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="ask_chunks")
-    chunk_index = models.PositiveIntegerField()
-    text = models.TextField()
-    page = models.PositiveIntegerField(null=True, blank=True)
-    slide = models.PositiveIntegerField(null=True, blank=True)
-    row_start = models.PositiveIntegerField(null=True, blank=True)
-    row_end = models.PositiveIntegerField(null=True, blank=True)
-    embedding = VectorField(dimensions=settings.ASK_EMBEDDING_DIMENSIONS)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["document_id", "chunk_index"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["document", "chunk_index"],
-                name="unique_chunk_index_per_document",
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.document.title} chunk {self.chunk_index}"
+from documents.models import Chunk, Document
+from users.models import Workspace
 
 
 class Answer(models.Model):
@@ -56,10 +29,22 @@ class Answer(models.Model):
 
 
 class Citation(models.Model):
-    """A chunk the answer used, kept so the citation can be checked later."""
+    """A chunk the answer used. Its source is copied so history still shows it later."""
 
     answer = models.ForeignKey(Answer, on_delete=models.CASCADE, related_name="citations")
-    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name="citations")
+    # Empty once the chunk is replaced (reprocessing) or its document is deleted
+    chunk = models.ForeignKey(
+        Chunk, on_delete=models.SET_NULL, null=True, blank=True, related_name="citations"
+    )
+    # Empty once the document is deleted
+    document = models.ForeignKey(
+        Document, on_delete=models.SET_NULL, null=True, blank=True, related_name="ask_citations"
+    )
+    # Copied from the chunk when the answer is saved
+    document_title = models.CharField(max_length=255)
+    page = models.PositiveIntegerField(null=True, blank=True)
+    section = models.CharField(max_length=255, blank=True)
+    text = models.TextField()
     rank = models.PositiveIntegerField()
     score = models.FloatField()
 

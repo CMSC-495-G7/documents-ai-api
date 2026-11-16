@@ -9,43 +9,15 @@ class AskIn(Schema):
 
 
 class CitationOut(Schema):
-    chunk_id: int
-    document_id: int
+    # Both are null once the chunk or document is gone
+    chunk_id: int | None
+    document_id: int | None
     document_title: str
     page: int | None
-    slide: int | None
-    row_start: int | None
-    row_end: int | None
+    # DOCX heading, empty for PDFs
+    section: str
     text: str
     score: float
-
-    @staticmethod
-    def resolve_document_id(citation):
-        return citation.chunk.document_id
-
-    @staticmethod
-    def resolve_document_title(citation):
-        return citation.chunk.document.title
-
-    @staticmethod
-    def resolve_page(citation):
-        return citation.chunk.page
-
-    @staticmethod
-    def resolve_slide(citation):
-        return citation.chunk.slide
-
-    @staticmethod
-    def resolve_row_start(citation):
-        return citation.chunk.row_start
-
-    @staticmethod
-    def resolve_row_end(citation):
-        return citation.chunk.row_end
-
-    @staticmethod
-    def resolve_text(citation):
-        return citation.chunk.text
 
 
 class AskOut(Schema):
@@ -53,3 +25,19 @@ class AskOut(Schema):
     answer: str
     model: str
     citations: list[CitationOut]
+
+
+class ProviderOut(Schema):
+    id: str
+    label: str
+    # False when the server has no key for it
+    available: bool
+
+
+class AskSettingsOut(Schema):
+    answer_provider: str
+    providers: list[ProviderOut]
+
+
+class AskSettingsIn(Schema):
+    answer_provider: str

@@ -1,19 +1,13 @@
 from django.contrib import admin
 
-from ask.models import Answer, Chunk, Citation
-
-
-@admin.register(Chunk)
-class ChunkAdmin(admin.ModelAdmin):
-    list_display = ("id", "document", "chunk_index", "page", "slide", "row_start", "row_end")
-    list_filter = ("document__file_type", "document__status")
-    search_fields = ("text", "document__title")
+from ask.models import Answer, Citation
 
 
 class CitationInline(admin.TabularInline):
     model = Citation
     extra = 0
-    readonly_fields = ("chunk", "rank", "score")
+    fields = ("rank", "score", "document_title", "page", "section", "chunk")
+    readonly_fields = fields
 
 
 @admin.register(Answer)
@@ -26,4 +20,4 @@ class AnswerAdmin(admin.ModelAdmin):
 
 @admin.register(Citation)
 class CitationAdmin(admin.ModelAdmin):
-    list_display = ("id", "answer", "chunk", "rank", "score")
+    list_display = ("id", "answer", "rank", "document_title", "page", "score")

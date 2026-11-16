@@ -3,8 +3,19 @@ from django.db import models
 
 
 class Workspace(models.Model):
+
+    class AnswerProvider(models.TextChoices):
+        OPENAI = "openai", "OpenAI"
+        GEMINI = "gemini", "Gemini"
+
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True)
+    # Who writes the answers for /api/ask. Admins change it in Settings
+    answer_provider = models.CharField(
+        max_length=20,
+        choices=AnswerProvider,
+        default=AnswerProvider.OPENAI,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
