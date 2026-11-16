@@ -15,7 +15,7 @@ class TestRunner(DiscoverRunner):
         HUEY.immediate = True
 
         # Keep the test output clean. assertLogs still sees everything.
-        for name in ["documents", "core"]:
+        for name in ["documents", "core", "ask"]:
             for handler in logging.getLogger(name).handlers:
                 handler.setLevel(logging.CRITICAL)
         logging.getLogger("pypdf").setLevel(logging.CRITICAL)

@@ -141,7 +141,7 @@ class OpenAIProviderTests(SimpleTestCase):
 
     def test_client_has_the_50_second_timeout(self, client_class):
         OpenAIProvider()
-        client_class.assert_called_once_with(api_key="sk-test", timeout=50)
+        client_class.assert_called_once_with(api_key="sk-test", timeout=50, max_retries=0)
 
     def test_embed_sends_the_model_and_size(self, client_class):
         client = client_class.return_value
@@ -179,6 +179,13 @@ class OpenAIProviderTests(SimpleTestCase):
         with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
             embed(["hello"])
 
+    def test_answer_timeout_becomes_llm_error(self, client_class):
+        request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        client_class.return_value.responses.create.side_effect = openai.APITimeoutError(request=request)
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            ask("hello")
+
     def test_bad_key_becomes_llm_error_without_details(self, client_class):
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
         response = httpx.Response(401, request=request)
@@ -208,7 +215,10 @@ class GeminiProviderTests(SimpleTestCase):
     def test_client_points_at_gemini(self, client_class):
         GeminiProvider()
         client_class.assert_called_once_with(
-            api_key="gm-test", base_url="https://gemini.example/openai", timeout=50
+            api_key="gm-test",
+            base_url="https://gemini.example/openai",
+            timeout=50,
+            max_retries=0,
         )
 
     @override_settings(GEMINI_API_KEY="")
@@ -239,6 +249,13 @@ class GeminiProviderTests(SimpleTestCase):
 
         messages = client.chat.completions.create.call_args.kwargs["messages"]
         self.assertEqual(messages, [{"role": "user", "content": "How many cleanings?"}])
+
+    def test_answer_timeout_becomes_llm_error(self, client_class):
+        request = httpx.Request("POST", "https://gemini.example/openai/chat/completions")
+        client_class.return_value.chat.completions.create.side_effect = openai.APITimeoutError(request=request)
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            ask("hello", provider="gemini")
 
     def test_bad_key_becomes_llm_error_without_details(self, client_class):
         request = httpx.Request("POST", "https://gemini.example/openai/chat/completions")

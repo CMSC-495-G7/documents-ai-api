@@ -34,7 +34,7 @@ x-app: &app
     GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
     GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-3.1-flash-lite}
     ASK_MAX_CONTEXT_CHUNKS: ${ASK_MAX_CONTEXT_CHUNKS:-5}
-    ASK_SIMILARITY_CUTOFF: ${ASK_SIMILARITY_CUTOFF:-0.35}
+    ASK_SIMILARITY_CUTOFF: ${ASK_SIMILARITY_CUTOFF:-0.28}
   volumes:
     - ./manage.py:/app/manage.py
     - ./config:/app/config

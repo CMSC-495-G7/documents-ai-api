@@ -91,7 +91,7 @@ DOCUMENT_MAX_UPLOAD_MB = env.int("DOCUMENT_MAX_UPLOAD_MB", default=16)
 
 # POST /api/ask. Below the cutoff (0 to 1) it answers "not found" without the LLM.
 ASK_MAX_CONTEXT_CHUNKS = env.int("ASK_MAX_CONTEXT_CHUNKS", default=5)
-ASK_SIMILARITY_CUTOFF = env.float("ASK_SIMILARITY_CUTOFF", default=0.35)
+ASK_SIMILARITY_CUTOFF = env.float("ASK_SIMILARITY_CUTOFF", default=0.28)
 
 # Background jobs. The worker is "python manage.py run_huey".
 HUEY = {
@@ -149,5 +149,6 @@ LOGGING = {
     "loggers": {
         "documents": {"handlers": ["console"], "level": "INFO"},
         "core": {"handlers": ["console"], "level": "INFO"},
+        "ask": {"handlers": ["console"], "level": "INFO"},
     },
 }

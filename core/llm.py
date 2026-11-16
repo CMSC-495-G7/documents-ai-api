@@ -112,6 +112,7 @@ class OpenAIProvider:
         self.client = openai.OpenAI(
             api_key=settings.OPENAI_API_KEY,
             timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=0,
         )
 
     def embed(self, texts):
@@ -149,6 +150,7 @@ class GeminiProvider:
             api_key=settings.GEMINI_API_KEY,
             base_url=settings.GEMINI_BASE_URL,
             timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_retries=0,
         )
 
     def ask(self, prompt, instructions=""):
