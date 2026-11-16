@@ -22,7 +22,11 @@ Five public HR/policy PDFs were uploaded through the API and processed with
 Total: 105 chunks. All five documents reached `ready`.
 
 `DatacapSetupGuide 1 1.pdf` was excluded. It is an internal work document, not
-an HR policy, and it was not uploaded, committed, or sent to OpenAI.
+an HR policy, and it was not uploaded, committed, or sent to OpenAI. It was
+removed from the local folder.
+
+The five public PDFs are committed under `documents for testing/` so the
+measurements can be reproduced.
 
 ### Measurements
 
