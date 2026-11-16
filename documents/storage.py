@@ -17,6 +17,11 @@ def save_file(file, extension):
     return default_storage.save(name, file)
 
 
+def open_file(path):
+    """Opens a saved file for reading. Use it in a with block."""
+    return default_storage.open(path, "rb")
+
+
 def delete_file(path):
     """Deletes a saved file, if it exists."""
     default_storage.delete(path)

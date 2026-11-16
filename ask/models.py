@@ -9,7 +9,7 @@ from users.models import User, Workspace
 class Chunk(models.Model):
     """A piece of a document, with its location and embedding, that answers can cite."""
 
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="chunks")
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="ask_chunks")
     chunk_index = models.PositiveIntegerField()
     text = models.TextField()
     page = models.PositiveIntegerField(null=True, blank=True)
