@@ -40,7 +40,7 @@ class DocumentFileTests(TempStorageMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertEqual(b"".join(response.streaming_content), content)
-        response.close()
+
 
     def test_admin_can_open_pdf(self):
         document = make_saved_document(
@@ -50,7 +50,7 @@ class DocumentFileTests(TempStorageMixin, TestCase):
         response = self.get_file(document.pk)
 
         self.assertEqual(response.status_code, 200)
-        response.close()
+        b"".join(response.streaming_content)
 
     def test_docx_content_type(self):
         content = docx_with(("paragraph", "Hello"))
@@ -68,7 +68,7 @@ class DocumentFileTests(TempStorageMixin, TestCase):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
         self.assertEqual(b"".join(response.streaming_content), content)
-        response.close()
+
 
     def test_other_workspace_returns_404(self):
         other_workspace = make_workspace(
