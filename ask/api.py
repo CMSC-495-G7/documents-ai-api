@@ -85,3 +85,25 @@ def update_settings(request, payload: AskSettingsIn):
     workspace.answer_provider = provider
     workspace.save(update_fields=["answer_provider"])
     return settings_for(workspace)
+
+@router.get(
+    "/{int:answer_id}",
+    auth=IsEmployeeOrAdmin(),
+    response={200: AskOut, 404: ErrorOut},
+)
+def get_answer(request, answer_id: int):
+    answer = Answer.objects.filter(
+        pk=answer_id,
+        user=request.auth,
+        workspace=request.auth.workspace,
+    ).prefetch_related("citations").first()
+
+    if answer is None:
+        raise HttpError(404, "Answer not found.")
+
+    return {
+        "id": answer.id,
+        "answer": answer.answer,
+        "model": answer.model_name,
+        "citations": list(answer.citations.all()),
+    }
