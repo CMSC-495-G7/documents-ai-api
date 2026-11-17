@@ -5,6 +5,12 @@ import zipfile
 PDF = "pdf"
 DOCX = "docx"
 
+# Sent back when someone opens the file
+CONTENT_TYPES = {
+    PDF: "application/pdf",
+    DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
 PDF_START = b"%PDF-"
 
 

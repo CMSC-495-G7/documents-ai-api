@@ -1,4 +1,3 @@
-
 from django.test import TestCase
 
 from documents.models import Document
@@ -41,16 +40,13 @@ class DocumentFileTests(TempStorageMixin, TestCase):
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertEqual(b"".join(response.streaming_content), content)
 
-
-    def test_admin_can_open_pdf(self):
-        document = make_saved_document(
-            self.admin.workspace, pdf_with("Hello")
-        )
+    def test_opens_in_the_browser_with_its_name(self):
+        document = make_saved_document(self.admin.workspace, pdf_with("Hello"))
 
         response = self.get_file(document.pk)
 
-        self.assertEqual(response.status_code, 200)
-        b"".join(response.streaming_content)
+        self.assertEqual(response["Content-Disposition"], f'inline; filename="{document.title}.pdf"')
+        b"".join(response.streaming_content)  # closes the file
 
     def test_docx_content_type(self):
         content = docx_with(("paragraph", "Hello"))
@@ -68,7 +64,6 @@ class DocumentFileTests(TempStorageMixin, TestCase):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
         self.assertEqual(b"".join(response.streaming_content), content)
-
 
     def test_other_workspace_returns_404(self):
         other_workspace = make_workspace(
@@ -99,7 +94,8 @@ class DocumentFileTests(TempStorageMixin, TestCase):
             file_path="documents/missing.pdf",
         )
 
-        response = self.get_file(document.pk)
+        with self.assertLogs("documents.api", "WARNING"):
+            response = self.get_file(document.pk)
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(

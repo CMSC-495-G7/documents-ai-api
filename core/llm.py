@@ -162,4 +162,9 @@ class GeminiProvider:
         except openai.OpenAIError as error:
             logger.warning("Gemini answer failed: %r", error)
             raise LLMError("The AI service didn't answer. Try again later.") from error
-        return response.choices[0].message.content or ""
+        choices = getattr(response, "choices", None)
+        message = getattr(choices[0], "message", None) if choices else None
+        content = getattr(message, "content", None)
+        if not isinstance(content, str) or not content.strip():
+            raise LLMError("The AI service didn't answer. Try again later.")
+        return content

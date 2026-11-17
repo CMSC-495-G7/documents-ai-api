@@ -71,6 +71,21 @@ def source_label(chunk):
 
 def save_answer(user, question, answer, model_name, used_llm, matches):
     with transaction.atomic():
+        document_ids = set()
+        chunk_ids = set()
+        if matches:
+            # Deletion and reprocessing lock the document before changing its chunks.
+            document_ids = set(
+                Document.objects.select_for_update()
+                .filter(pk__in={chunk.document_id for chunk, _ in matches})
+                .order_by("pk")
+                .values_list("pk", flat=True)
+            )
+            chunk_ids = set(
+                Chunk.objects.filter(
+                    pk__in={chunk.pk for chunk, _ in matches}, document_id__in=document_ids
+                ).values_list("pk", flat=True)
+            )
         record = Answer.objects.create(
             workspace=user.workspace,
             user=user,
@@ -83,8 +98,8 @@ def save_answer(user, question, answer, model_name, used_llm, matches):
             [
                 Citation(
                     answer=record,
-                    chunk=chunk,
-                    document=chunk.document,
+                    chunk_id=chunk.pk if chunk.pk in chunk_ids else None,
+                    document_id=chunk.document_id if chunk.document_id in document_ids else None,
                     document_title=chunk.document.title,
                     page=chunk.page,
                     section=chunk.section,
