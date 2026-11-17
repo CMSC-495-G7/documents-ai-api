@@ -3,11 +3,12 @@ import time
 
 from ninja import Router
 from ninja.errors import HttpError
+
 from ask.models import Answer
 from ask.schemas import AskHistoryOut, AskIn, AskOut, AskSettingsIn, AskSettingsOut
 from ask.services import ask_question
 from core import llm
-from users.permissions import IsAdmin, IsEmployeeOrAdmin
+from users.permissions import IsAdmin, IsEmployeeOrAdmin, workspace_queryset
 from users.schemas import ErrorOut
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,20 @@ logger = logging.getLogger(__name__)
 router = Router(tags=["Ask"])
 
 UNAVAILABLE = "The answer service is unavailable. Please try again."
+
+# The sidebar shows this many, newest first
+HISTORY_LIMIT = 20
+
+
+def answer_out(answer):
+    """Same shape for a new answer and a saved one."""
+    return {
+        "id": answer.id,
+        "question": answer.question,
+        "answer": answer.answer,
+        "model": answer.model_name,
+        "citations": list(answer.citations.all()),
+    }
 
 
 @router.post(
@@ -31,6 +46,7 @@ def ask(request, payload: AskIn):
     try:
         answer = ask_question(request.auth, question)
     except llm.LLMError:
+        logger.warning("Answer failed after %.1f s", time.monotonic() - started)
         raise HttpError(502, UNAVAILABLE)
     seconds = time.monotonic() - started
     logger.info(
@@ -40,31 +56,14 @@ def ask(request, payload: AskIn):
         answer.model_name or "no LLM",
     )
 
-    return {
-        "id": answer.id,
-        "answer": answer.answer,
-        "model": answer.model_name,
-        "citations": list(answer.citations.all()),
-    }
+    return answer_out(answer)
 
 
 @router.get("/history", auth=IsEmployeeOrAdmin(), response=list[AskHistoryOut])
 def get_history(request):
-    answers = Answer.objects.filter(
-        user=request.auth,
-        workspace=request.auth.workspace,
-    ).order_by("-created_at", "-id")[:50]
-
-    return [
-        {
-            "id": answer.id,
-            "question": answer.question,
-            "answer": answer.answer,
-            "model": answer.model_name,
-            "created_at": answer.created_at,
-        }
-        for answer in answers
-    ]
+    return workspace_queryset(Answer, request.auth).filter(user=request.auth).order_by(
+        "-created_at", "-id"
+    )[:HISTORY_LIMIT]
 
 
 @router.post("/stream", auth=IsEmployeeOrAdmin(), response={501: ErrorOut})
@@ -99,24 +98,21 @@ def update_settings(request, payload: AskSettingsIn):
     workspace.save(update_fields=["answer_provider"])
     return settings_for(workspace)
 
+
 @router.get(
     "/{int:answer_id}",
     auth=IsEmployeeOrAdmin(),
     response={200: AskOut, 404: ErrorOut},
 )
 def get_answer(request, answer_id: int):
-    answer = Answer.objects.filter(
-        pk=answer_id,
-        user=request.auth,
-        workspace=request.auth.workspace,
-    ).prefetch_related("citations").first()
+    answer = (
+        workspace_queryset(Answer, request.auth)
+        .filter(pk=answer_id, user=request.auth)
+        .prefetch_related("citations")
+        .first()
+    )
 
     if answer is None:
         raise HttpError(404, "Answer not found.")
 
-    return {
-        "id": answer.id,
-        "answer": answer.answer,
-        "model": answer.model_name,
-        "citations": list(answer.citations.all()),
-    }
+    return answer_out(answer)

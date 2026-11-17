@@ -23,16 +23,16 @@ class CitationOut(Schema):
 
 class AskOut(Schema):
     id: int
-    answer: str
-    model: str
-    citations: list[CitationOut]
-    
-
-class AskHistoryOut(Schema):
-    id: int
     question: str
     answer: str
     model: str
+    citations: list[CitationOut]
+
+
+# The sidebar list. The answer comes from GET /api/ask/{id}
+class AskHistoryOut(Schema):
+    id: int
+    question: str
     created_at: datetime
 
 
