@@ -112,23 +112,27 @@ other requests. Every endpoint needs a token unless it sets `auth=None`.
 ## Ask a question
 
 `POST /api/ask` takes `{"question": "How many vacation days do I get?"}` and
-returns the answer, the model name, and the cited chunks (document title, page /
-slide / row range, and chunk ID). It only searches `ready` documents in the user's
-workspace and saves every question, answer, and citation.
+returns the question, the answer, the model name, and the cited chunks (document
+title, page or section, text, and score), best match first. It only searches
+`ready` documents in the user's workspace and saves every question, answer, and
+citation.
 
-The defaults use Google Gemini's free tier. Get a key at
-[aistudio.google.com/apikey](https://aistudio.google.com/apikey) and add it to
-`.env`:
+Answers come from OpenAI by default. Admins can switch their workspace to Gemini
+in the UI's Settings (`PATCH /api/ask/settings`), which needs `GEMINI_API_KEY` in
+`.env`. Embeddings always use OpenAI. With `LLM_PROVIDER=fake` (the default),
+nothing calls out.
 
-```sh
-GEMINI_API_KEY=your-key
-```
+If the AI service fails or takes longer than `LLM_TIMEOUT_SECONDS`, the endpoint
+returns a clear 502. If the best chunk scores below `ASK_SIMILARITY_CUTOFF`, the
+LLM is skipped and the answer is `"I couldn't find this in the documents"` with
+no citations.
 
-You can also point the `ASK_*_BASE_URL` / `ASK_*_MODEL` values at any other
-OpenAI-compatible provider (see `.env.example`). Without an API key, the endpoint
-returns a clear 502 instead of calling out. If the best chunk scores below
-`ASK_SIMILARITY_CUTOFF`, the LLM is skipped and the answer is
-`"I couldn't find this in the documents"` with no citations.
+- `GET /api/ask/history`: your last 20 questions, newest first
+- `GET /api/ask/{id}`: one of your saved answers, same shape as `POST /api/ask`
+
+To try it end to end, `samples/` has public policy PDFs to upload, and
+`bash scripts/test-ask.sh` asks one answerable and one off-topic question on your
+running stack.
 
 ## Check and test
 

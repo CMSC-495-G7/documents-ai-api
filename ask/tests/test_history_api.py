@@ -1,4 +1,3 @@
-
 from django.test import TestCase
 
 from ask.models import Answer, Citation
@@ -40,9 +39,9 @@ class AskHistoryTests(TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["id"], answer.id)
         self.assertEqual(history[0]["question"], answer.question)
-        self.assertEqual(history[0]["answer"], answer.answer)
-        self.assertEqual(history[0]["model"], "fake")
         self.assertIn("created_at", history[0])
+        # The sidebar only needs the question, the answer comes from /api/ask/{id}
+        self.assertNotIn("answer", history[0])
 
     def test_history_only_shows_own_answers(self):
         own_answer = self.make_answer("My question")
@@ -60,10 +59,10 @@ class AskHistoryTests(TestCase):
             [own_answer.id],
         )
 
-    def test_history_returns_latest_50(self):
+    def test_history_returns_latest_20(self):
         answers = [
             self.make_answer(f"Question {i}")
-            for i in range(52)
+            for i in range(22)
         ]
 
         response = self.get("/api/ask/history")
@@ -71,7 +70,7 @@ class AskHistoryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             [item["id"] for item in response.json()],
-            [answer.id for answer in reversed(answers[-50:])],
+            [answer.id for answer in reversed(answers[-20:])],
         )
 
     def test_get_answer_with_citations(self):
@@ -91,6 +90,7 @@ class AskHistoryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["id"], answer.id)
+        self.assertEqual(body["question"], answer.question)
         self.assertEqual(body["answer"], answer.answer)
         self.assertEqual(body["model"], "fake")
         self.assertEqual(len(body["citations"]), 1)
@@ -99,6 +99,27 @@ class AskHistoryTests(TestCase):
             "Employee Handbook",
         )
         self.assertEqual(body["citations"][0]["page"], 12)
+
+    def test_citations_come_back_in_rank_order(self):
+        # [1] in the answer must stay the first citation
+        answer = self.make_answer()
+        for rank in (2, 1):
+            Citation.objects.create(
+                answer=answer,
+                document_title=f"Doc {rank}",
+                page=rank,
+                section="",
+                text="Text.",
+                rank=rank,
+                score=0.5,
+            )
+
+        response = self.get(f"/api/ask/{answer.id}")
+
+        self.assertEqual(
+            [c["document_title"] for c in response.json()["citations"]],
+            ["Doc 1", "Doc 2"],
+        )
 
     def test_cannot_view_another_users_answer(self):
         other_user = make_user(

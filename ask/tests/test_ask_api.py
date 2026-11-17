@@ -399,6 +399,14 @@ class ProviderFailureTests(AskTestCase):
 
     @patch("core.llm.ask", side_effect=LLMError("down"))
     @patch("core.llm.embed", return_value=[vector(0)])
+    def test_logs_how_long_a_failed_answer_took(self, embed, ask):
+        with self.assertLogs("ask.api", "WARNING") as logs:
+            self.ask()
+
+        self.assertIn("Answer failed after", logs.output[0])
+
+    @patch("core.llm.ask", side_effect=LLMError("down"))
+    @patch("core.llm.embed", return_value=[vector(0)])
     def test_other_endpoints_still_work_after_502(self, embed, ask):
         self.assert_clear_502(self.ask())
 

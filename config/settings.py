@@ -114,6 +114,7 @@ GEMINI_BASE_URL = env(
     "GEMINI_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai"
 )
 GEMINI_CHAT_MODEL = env("GEMINI_CHAT_MODEL", default="gemini-3.1-flash-lite")
+# Per request to the AI service. A question makes two (embed, then answer)
 LLM_TIMEOUT_SECONDS = env.int("LLM_TIMEOUT_SECONDS", default=50)
 # How many chunks go in one embeddings request.
 EMBED_BATCH_SIZE = env.int("EMBED_BATCH_SIZE", default=100)

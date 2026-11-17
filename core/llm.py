@@ -109,11 +109,13 @@ class OpenAIProvider:
     def __init__(self):
         if not settings.OPENAI_API_KEY:
             raise LLMError("OPENAI_API_KEY is not set.")
+        # Embeddings keep the default retries, the worker can wait out a 429
         self.client = openai.OpenAI(
             api_key=settings.OPENAI_API_KEY,
             timeout=settings.LLM_TIMEOUT_SECONDS,
-            max_retries=0,
         )
+        # Answers don't retry, someone is waiting for the 502
+        self.answer_client = self.client.with_options(max_retries=0)
 
     def embed(self, texts):
         try:
@@ -131,7 +133,7 @@ class OpenAIProvider:
         # Only send instructions when there are some
         extra = {"instructions": instructions} if instructions else {}
         try:
-            response = self.client.responses.create(
+            response = self.answer_client.responses.create(
                 model=settings.CHAT_MODEL, input=prompt, **extra
             )
         except openai.OpenAIError as error:
