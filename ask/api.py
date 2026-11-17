@@ -1,7 +1,7 @@
 from ninja import Router
 from ninja.errors import HttpError
-
-from ask.schemas import AskIn, AskOut, AskSettingsIn, AskSettingsOut
+from ask.models import Answer
+from ask.schemas import AskHistoryOut, AskIn, AskOut, AskSettingsIn, AskSettingsOut
 from ask.services import ask_question
 from core import llm
 from users.permissions import IsAdmin, IsEmployeeOrAdmin
@@ -33,6 +33,25 @@ def ask(request, payload: AskIn):
         "model": answer.model_name,
         "citations": list(answer.citations.all()),
     }
+
+
+@router.get("/history", auth=IsEmployeeOrAdmin(), response=list[AskHistoryOut])
+def get_history(request):
+    answers = Answer.objects.filter(
+        user=request.auth,
+        workspace=request.auth.workspace,
+    ).order_by("-created_at", "-id")[:50]
+
+    return [
+        {
+            "id": answer.id,
+            "question": answer.question,
+            "answer": answer.answer,
+            "model": answer.model_name,
+            "created_at": answer.created_at,
+        }
+        for answer in answers
+    ]
 
 
 @router.post("/stream", auth=IsEmployeeOrAdmin(), response={501: ErrorOut})
