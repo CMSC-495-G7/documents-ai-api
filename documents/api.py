@@ -1,3 +1,4 @@
+import logging
 from pathlib import PurePath
 
 from django.conf import settings
@@ -7,13 +8,15 @@ from ninja import File, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
-from documents.file_types import detect_file_type
+from documents.file_types import CONTENT_TYPES, detect_file_type
 from documents.models import Document
 from documents.schemas import DocumentOut
 from documents.storage import delete_file, open_file, save_file
 from documents.tasks import process_document
 from users.permissions import IsAdmin, workspace_queryset
 from users.schemas import ErrorOut
+
+logger = logging.getLogger(__name__)
 
 router = Router(tags=["Documents"])
 
@@ -63,23 +66,20 @@ def list_documents(request):
 
 @router.delete("/{document_id}", auth=IsAdmin(), response={204: None, 404: ErrorOut})
 def delete_document(request, document_id: int):
-    document = workspace_queryset(Document, request.auth).filter(
-        pk=document_id
-    ).first()
-
-    if document is None:
-        raise HttpError(404, "Document not found.")
-
-    path = document.file_path
-
     with transaction.atomic():
+        document = workspace_queryset(Document, request.auth).select_for_update().filter(
+            pk=document_id
+        ).first()
+        if document is None:
+            raise HttpError(404, "Document not found.")
+
+        path = document.file_path
         # Chunks go too (CASCADE)
         document.delete()
         # Only once the row is gone. A file that can't be deleted is logged, still 204
         transaction.on_commit(lambda: delete_file(path), robust=True)
 
     return 204, None
-
 
 
 @router.get("/{document_id}/file", response={404: ErrorOut})
@@ -94,18 +94,14 @@ def get_document_file(request, document_id: int):
     try:
         file = open_file(document.file_path)
     except FileNotFoundError:
+        # The row is there but the file isn't, storage is out of sync
+        logger.warning("File missing for document %s: %s", document.id, document.file_path)
         raise HttpError(404, "Document not found.")
 
-    content_type = (
-        "application/pdf"
-        if document.file_type == "pdf"
-        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-
+    # inline, so the browser shows it instead of downloading it
     return FileResponse(
         file,
-        content_type=content_type,
+        content_type=CONTENT_TYPES[document.file_type],
         filename=f"{document.title}.{document.file_type}",
         as_attachment=False,
     )
-

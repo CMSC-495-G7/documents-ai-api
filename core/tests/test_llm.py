@@ -240,6 +240,22 @@ class GeminiProviderTests(SimpleTestCase):
         messages = client.chat.completions.create.call_args.kwargs["messages"]
         self.assertEqual(messages, [{"role": "user", "content": "How many cleanings?"}])
 
+    def test_incomplete_completion_raises_llm_error(self, client_class):
+        provider = GeminiProvider()
+        completion = client_class.return_value.chat.completions.create
+        for response in (
+            SimpleNamespace(),
+            SimpleNamespace(choices=[]),
+            SimpleNamespace(choices=[SimpleNamespace()]),
+            chat_reply(None),
+            chat_reply(""),
+            chat_reply(" \t\n"),
+        ):
+            with self.subTest(response=response):
+                completion.return_value = response
+                with self.assertRaisesMessage(LLMError, "The AI service didn't answer."):
+                    provider.ask("How many cleanings?")
+
     def test_bad_key_becomes_llm_error_without_details(self, client_class):
         request = httpx.Request("POST", "https://gemini.example/openai/chat/completions")
         response = httpx.Response(401, request=request)
