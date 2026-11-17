@@ -2,6 +2,7 @@ from pathlib import PurePath
 
 from django.conf import settings
 from django.db import transaction
+from django.http import FileResponse
 from ninja import File, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
@@ -9,7 +10,7 @@ from ninja.files import UploadedFile
 from documents.file_types import detect_file_type
 from documents.models import Document
 from documents.schemas import DocumentOut
-from documents.storage import delete_file, save_file
+from documents.storage import delete_file, open_file, save_file
 from documents.tasks import process_document
 from users.permissions import IsAdmin, workspace_queryset
 from users.schemas import ErrorOut
@@ -78,3 +79,33 @@ def delete_document(request, document_id: int):
         transaction.on_commit(lambda: delete_file(path), robust=True)
 
     return 204, None
+
+
+
+@router.get("/{document_id}/file", response={404: ErrorOut})
+def get_document_file(request, document_id: int):
+    document = workspace_queryset(Document, request.auth).filter(
+        pk=document_id
+    ).first()
+
+    if document is None:
+        raise HttpError(404, "Document not found.")
+
+    try:
+        file = open_file(document.file_path)
+    except FileNotFoundError:
+        raise HttpError(404, "Document not found.")
+
+    content_type = (
+        "application/pdf"
+        if document.file_type == "pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+    return FileResponse(
+        file,
+        content_type=content_type,
+        filename=f"{document.title}.{document.file_type}",
+        as_attachment=False,
+    )
+
