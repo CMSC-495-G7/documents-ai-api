@@ -110,6 +110,17 @@ class SuccessfulAnswerTests(AskTestCase):
     def test_admin_can_ask(self, embed, ask):
         self.assertEqual(self.ask(user=make_admin()).status_code, 200)
 
+    def test_logs_answer_timing(self, embed, ask):
+        document = make_ready_document(self.workspace)
+        make_chunk(document)
+
+        with self.assertLogs("ask.api", "INFO") as logs:
+            self.ask()
+
+        line = logs.output[0].split(":", 2)[2]
+        self.assertTrue(line.startswith("Answer "))
+        self.assertTrue(line.endswith("s (fake)"))
+
     def test_only_ready_documents_from_your_workspace_are_searched(self, embed, ask):
         ready = make_ready_document(self.workspace, title="Ready")
         make_chunk(ready, text="Ready text.")
@@ -385,6 +396,16 @@ class ProviderFailureTests(AskTestCase):
     @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="")
     def test_missing_key_returns_clear_502(self):
         self.assert_clear_502(self.ask())
+
+    @patch("core.llm.ask", side_effect=LLMError("down"))
+    @patch("core.llm.embed", return_value=[vector(0)])
+    def test_other_endpoints_still_work_after_502(self, embed, ask):
+        self.assert_clear_502(self.ask())
+
+        token = create_access_token(self.user)
+        response = self.client.get("/api/documents", headers=auth_header(token))
+
+        self.assertEqual(response.status_code, 200)
 
 
 class AskStreamTests(AskTestCase):

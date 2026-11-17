@@ -1,3 +1,6 @@
+import logging
+import time
+
 from ninja import Router
 from ninja.errors import HttpError
 from ask.models import Answer
@@ -6,6 +9,8 @@ from ask.services import ask_question
 from core import llm
 from users.permissions import IsAdmin, IsEmployeeOrAdmin
 from users.schemas import ErrorOut
+
+logger = logging.getLogger(__name__)
 
 router = Router(tags=["Ask"])
 
@@ -22,10 +27,18 @@ def ask(request, payload: AskIn):
     if not question:
         raise HttpError(422, "Ask a question.")
 
+    started = time.monotonic()
     try:
         answer = ask_question(request.auth, question)
     except llm.LLMError:
         raise HttpError(502, UNAVAILABLE)
+    seconds = time.monotonic() - started
+    logger.info(
+        "Answer %s: %.1f s (%s)",
+        answer.id,
+        seconds,
+        answer.model_name or "no LLM",
+    )
 
     return {
         "id": answer.id,
