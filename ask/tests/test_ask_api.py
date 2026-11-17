@@ -1,12 +1,16 @@
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.test import TestCase, override_settings
+from django.db import connections
+from django.test import Client, TestCase, TransactionTestCase, override_settings
 
 from ask.models import Answer, Citation
 from ask.services import NO_ANSWER
 from ask.tests.factories import make_chunk, make_ready_document, vector
 from core.llm import LLMError
-from documents.models import Chunk
+from documents.models import Chunk, Document
+from documents.processing import save_chunks, set_status
 from documents.tests.factories import make_document
 from users.tests.factories import auth_header, make_admin, make_user, make_workspace
 from users.tokens import create_access_token
@@ -14,8 +18,9 @@ from users.tokens import create_access_token
 ANSWER = "You get 20 vacation days [1]."
 
 
-class AskTestCase(TestCase):
+class AskRequestMixin:
     def setUp(self):
+        super().setUp()
         self.user = make_user()
         self.workspace = self.user.workspace
 
@@ -27,6 +32,10 @@ class AskTestCase(TestCase):
             content_type="application/json",
             headers=auth_header(token),
         )
+
+
+class AskTestCase(AskRequestMixin, TestCase):
+    pass
 
 
 @patch("core.llm.ask", return_value=ANSWER)
@@ -224,6 +233,61 @@ class SavedCitationTests(AskTestCase):
         self.assert_keeps_its_source(citation)
 
 
+class ConcurrentCitationTests(AskRequestMixin, TransactionTestCase):
+    def setUp(self):
+        super().setUp()
+        self.document = make_ready_document(self.workspace, title="Employee Handbook")
+        make_chunk(self.document, text="20 days of paid vacation.", page=12)
+
+    def ask_while_source_changes(self, change_source):
+        def change_on_separate_connection():
+            try:
+                change_source()
+            finally:
+                connections.close_all()
+
+        def reply_after_change(*args):
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                worker.submit(change_on_separate_connection).result()
+            return ANSWER
+
+        with (
+            patch("core.llm.embed", return_value=[vector(0)]),
+            patch("core.llm.ask", side_effect=reply_after_change),
+        ):
+            response = self.ask()
+
+        self.assertEqual(response.status_code, 200)
+        citation = Citation.objects.get(answer_id=response.json()["id"])
+        self.assertIsNone(citation.chunk_id)
+        self.assertEqual(citation.document_title, "Employee Handbook")
+        self.assertEqual(citation.page, 12)
+        self.assertEqual(citation.text, "20 days of paid vacation.")
+        return citation
+
+    def test_document_deleted_during_answer_generation(self):
+        token = create_access_token(make_admin(workspace=self.workspace))
+
+        def delete_document():
+            response = Client().delete(
+                f"/api/documents/{self.document.pk}", headers=auth_header(token)
+            )
+            self.assertEqual(response.status_code, 204)
+
+        citation = self.ask_while_source_changes(delete_document)
+        self.assertIsNone(citation.document_id)
+
+    def test_chunks_replaced_during_answer_generation(self):
+        def replace_chunks():
+            document = Document.objects.get(pk=self.document.pk)
+            self.assertTrue(set_status(document, Document.Status.PROCESSING))
+            replacement = Chunk(text="Updated text.", page=2, order=0)
+            self.assertTrue(save_chunks(document, [replacement], [vector(0)]))
+
+        citation = self.ask_while_source_changes(replace_chunks)
+        self.assertEqual(citation.document_id, self.document.pk)
+
+
 class AskPermissionsTests(AskTestCase):
     def test_no_token_gets_401(self):
         response = self.client.post(
@@ -311,6 +375,23 @@ class ProviderFailureTests(AskTestCase):
     @patch("core.llm.embed", side_effect=LLMError("down"))
     def test_embedding_outage_returns_clear_502(self, embed):
         self.assert_clear_502(self.ask())
+
+    @override_settings(LLM_PROVIDER="openai", GEMINI_API_KEY="gm-test")
+    @patch("core.llm.embed", return_value=[vector(0)])
+    @patch("core.llm.openai.OpenAI")
+    def test_empty_gemini_completion_returns_clear_502(self, client_class, embed):
+        self.workspace.answer_provider = "gemini"
+        self.workspace.save(update_fields=["answer_provider"])
+        completion = client_class.return_value.chat.completions.create
+        for choices in (
+            [],
+            [SimpleNamespace(message=SimpleNamespace())],
+            [SimpleNamespace(message=SimpleNamespace(content=None))],
+            [SimpleNamespace(message=SimpleNamespace(content="  "))],
+        ):
+            with self.subTest(choices=choices):
+                completion.return_value = SimpleNamespace(choices=choices)
+                self.assert_clear_502(self.ask())
 
     @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="")
     def test_missing_key_returns_clear_502(self):

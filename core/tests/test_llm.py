@@ -141,7 +141,11 @@ class OpenAIProviderTests(SimpleTestCase):
 
     def test_client_has_the_50_second_timeout(self, client_class):
         OpenAIProvider()
-        client_class.assert_called_once_with(api_key="sk-test", timeout=50, max_retries=0)
+        client_class.assert_called_once_with(api_key="sk-test", timeout=50)
+
+    def test_answers_dont_retry(self, client_class):
+        OpenAIProvider()
+        client_class.return_value.with_options.assert_called_once_with(max_retries=0)
 
     def test_embed_sends_the_model_and_size(self, client_class):
         client = client_class.return_value
@@ -157,14 +161,14 @@ class OpenAIProviderTests(SimpleTestCase):
         )
 
     def test_ask_returns_the_text(self, client_class):
-        client = client_class.return_value
+        client = client_class.return_value.with_options.return_value
         client.responses.create.return_value = SimpleNamespace(output_text="Two cleanings a year.")
 
         self.assertEqual(ask("How many cleanings?"), "Two cleanings a year.")
         client.responses.create.assert_called_once_with(model="gpt-test", input="How many cleanings?")
 
     def test_ask_sends_instructions(self, client_class):
-        client = client_class.return_value
+        client = client_class.return_value.with_options.return_value
         client.responses.create.return_value = SimpleNamespace(output_text="Two.")
 
         ask("How many cleanings?", "Answer briefly.")
@@ -181,7 +185,7 @@ class OpenAIProviderTests(SimpleTestCase):
 
     def test_answer_timeout_becomes_llm_error(self, client_class):
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
-        client_class.return_value.responses.create.side_effect = openai.APITimeoutError(request=request)
+        client_class.return_value.with_options.return_value.responses.create.side_effect = openai.APITimeoutError(request=request)
 
         with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
             ask("hello")
@@ -190,7 +194,7 @@ class OpenAIProviderTests(SimpleTestCase):
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
         response = httpx.Response(401, request=request)
         error = openai.AuthenticationError("Incorrect API key provided: sk-test", response=response, body=None)
-        client_class.return_value.responses.create.side_effect = error
+        client_class.return_value.with_options.return_value.responses.create.side_effect = error
 
         with self.assertLogs("core.llm", "WARNING"), self.assertRaises(LLMError) as raised:
             ask("hello")
@@ -249,6 +253,22 @@ class GeminiProviderTests(SimpleTestCase):
 
         messages = client.chat.completions.create.call_args.kwargs["messages"]
         self.assertEqual(messages, [{"role": "user", "content": "How many cleanings?"}])
+
+    def test_incomplete_completion_raises_llm_error(self, client_class):
+        provider = GeminiProvider()
+        completion = client_class.return_value.chat.completions.create
+        for response in (
+            SimpleNamespace(),
+            SimpleNamespace(choices=[]),
+            SimpleNamespace(choices=[SimpleNamespace()]),
+            chat_reply(None),
+            chat_reply(""),
+            chat_reply(" \t\n"),
+        ):
+            with self.subTest(response=response):
+                completion.return_value = response
+                with self.assertRaisesMessage(LLMError, "The AI service didn't answer."):
+                    provider.ask("How many cleanings?")
 
     def test_answer_timeout_becomes_llm_error(self, client_class):
         request = httpx.Request("POST", "https://gemini.example/openai/chat/completions")
