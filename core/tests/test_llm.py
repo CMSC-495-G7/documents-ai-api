@@ -7,7 +7,19 @@ import openai
 from django.test import SimpleTestCase, override_settings
 
 from core import llm
-from core.llm import EMBEDDING_DIMENSIONS, FakeProvider, LLMError, OpenAIProvider, ask, embed, fake_vector
+from core.llm import (
+    EMBEDDING_DIMENSIONS,
+    FakeProvider,
+    GeminiProvider,
+    LLMError,
+    OpenAIProvider,
+    answer_model,
+    ask,
+    embed,
+    fake_vector,
+    get_answer_provider,
+    has_key,
+)
 
 
 def cosine(a, b):
@@ -69,6 +81,40 @@ class AskTests(SimpleTestCase):
     def test_fake_answer(self):
         self.assertEqual(ask("What is the dental plan?"), "Fake answer to: What is the dental plan?")
 
+    def test_fake_answers_for_every_provider(self):
+        self.assertIsInstance(get_answer_provider("openai"), FakeProvider)
+        self.assertIsInstance(get_answer_provider("gemini"), FakeProvider)
+
+    def test_unknown_answer_provider(self):
+        with self.assertRaisesMessage(LLMError, "Unknown answer provider: carrier-pigeon"):
+            ask("hello", provider="carrier-pigeon")
+
+
+class AnswerProviderTests(SimpleTestCase):
+    @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test", GEMINI_API_KEY="gm-test")
+    @patch("core.llm.openai.OpenAI")
+    def test_picks_the_provider_by_name(self, client_class):
+        self.assertIsInstance(get_answer_provider("openai"), OpenAIProvider)
+        self.assertIsInstance(get_answer_provider("gemini"), GeminiProvider)
+
+    @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test", GEMINI_API_KEY="")
+    def test_has_key(self):
+        self.assertTrue(has_key("openai"))
+        self.assertFalse(has_key("gemini"))
+
+    @override_settings(LLM_PROVIDER="fake", OPENAI_API_KEY="", GEMINI_API_KEY="")
+    def test_fake_needs_no_key(self):
+        self.assertTrue(has_key("openai"))
+        self.assertTrue(has_key("gemini"))
+
+    @override_settings(LLM_PROVIDER="openai", CHAT_MODEL="gpt-test", GEMINI_CHAT_MODEL="gemini-test")
+    def test_answer_model(self):
+        self.assertEqual(answer_model("openai"), "gpt-test")
+        self.assertEqual(answer_model("gemini"), "gemini-test")
+
+    def test_fake_answer_model(self):
+        self.assertEqual(answer_model("gemini"), "fake")
+
 
 class ProviderSettingTests(SimpleTestCase):
     @override_settings(LLM_PROVIDER="carrier-pigeon")
@@ -117,6 +163,15 @@ class OpenAIProviderTests(SimpleTestCase):
         self.assertEqual(ask("How many cleanings?"), "Two cleanings a year.")
         client.responses.create.assert_called_once_with(model="gpt-test", input="How many cleanings?")
 
+    def test_ask_sends_instructions(self, client_class):
+        client = client_class.return_value
+        client.responses.create.return_value = SimpleNamespace(output_text="Two.")
+
+        ask("How many cleanings?", "Answer briefly.")
+        client.responses.create.assert_called_once_with(
+            model="gpt-test", input="How many cleanings?", instructions="Answer briefly."
+        )
+
     def test_timeout_becomes_llm_error(self, client_class):
         request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
         client_class.return_value.embeddings.create.side_effect = openai.APITimeoutError(request=request)
@@ -133,3 +188,64 @@ class OpenAIProviderTests(SimpleTestCase):
         with self.assertLogs("core.llm", "WARNING"), self.assertRaises(LLMError) as raised:
             ask("hello")
         self.assertNotIn("sk-test", str(raised.exception))
+
+
+def chat_reply(text):
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+
+
+@override_settings(
+    LLM_PROVIDER="openai",
+    GEMINI_API_KEY="gm-test",
+    GEMINI_BASE_URL="https://gemini.example/openai",
+    GEMINI_CHAT_MODEL="gemini-test",
+    LLM_TIMEOUT_SECONDS=50,
+)
+@patch("core.llm.openai.OpenAI")
+class GeminiProviderTests(SimpleTestCase):
+    """The real client is replaced, these never reach the network."""
+
+    def test_client_points_at_gemini(self, client_class):
+        GeminiProvider()
+        client_class.assert_called_once_with(
+            api_key="gm-test", base_url="https://gemini.example/openai", timeout=50
+        )
+
+    @override_settings(GEMINI_API_KEY="")
+    def test_needs_a_key(self, client_class):
+        with self.assertRaisesMessage(LLMError, "GEMINI_API_KEY is not set."):
+            ask("hello", provider="gemini")
+
+    def test_ask_returns_the_text(self, client_class):
+        client = client_class.return_value
+        client.chat.completions.create.return_value = chat_reply("Two cleanings a year.")
+
+        answer = ask("How many cleanings?", "Answer briefly.", "gemini")
+
+        self.assertEqual(answer, "Two cleanings a year.")
+        client.chat.completions.create.assert_called_once_with(
+            model="gemini-test",
+            messages=[
+                {"role": "system", "content": "Answer briefly."},
+                {"role": "user", "content": "How many cleanings?"},
+            ],
+        )
+
+    def test_no_instructions_no_system_message(self, client_class):
+        client = client_class.return_value
+        client.chat.completions.create.return_value = chat_reply("Two.")
+
+        ask("How many cleanings?", provider="gemini")
+
+        messages = client.chat.completions.create.call_args.kwargs["messages"]
+        self.assertEqual(messages, [{"role": "user", "content": "How many cleanings?"}])
+
+    def test_bad_key_becomes_llm_error_without_details(self, client_class):
+        request = httpx.Request("POST", "https://gemini.example/openai/chat/completions")
+        response = httpx.Response(401, request=request)
+        error = openai.AuthenticationError("Incorrect API key provided: gm-test", response=response, body=None)
+        client_class.return_value.chat.completions.create.side_effect = error
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaises(LLMError) as raised:
+            ask("hello", provider="gemini")
+        self.assertNotIn("gm-test", str(raised.exception))

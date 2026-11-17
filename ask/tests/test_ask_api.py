@@ -1,15 +1,17 @@
 from unittest.mock import patch
 
-from django.conf import settings
 from django.test import TestCase, override_settings
 
 from ask.models import Answer, Citation
-from ask.providers import ProviderError
 from ask.services import NO_ANSWER
 from ask.tests.factories import make_chunk, make_ready_document, vector
+from core.llm import LLMError
+from documents.models import Chunk
 from documents.tests.factories import make_document
 from users.tests.factories import auth_header, make_admin, make_user, make_workspace
 from users.tokens import create_access_token
+
+ANSWER = "You get 20 vacation days [1]."
 
 
 class AskTestCase(TestCase):
@@ -17,20 +19,20 @@ class AskTestCase(TestCase):
         self.user = make_user()
         self.workspace = self.user.workspace
 
-    def ask(self, question="How many vacation days do I get?", user=None):
+    def ask(self, question="How many vacation days do I get?", user=None, path="/api/ask"):
         token = create_access_token(user or self.user)
         return self.client.post(
-            "/api/ask",
+            path,
             {"question": question},
             content_type="application/json",
             headers=auth_header(token),
         )
 
 
-@patch("ask.services.generate_answer", return_value="You get 20 vacation days [1].")
-@patch("ask.services.embed_question", return_value=vector(0))
+@patch("core.llm.ask", return_value=ANSWER)
+@patch("core.llm.embed", return_value=[vector(0)])
 class SuccessfulAnswerTests(AskTestCase):
-    def test_returns_answer_with_citations(self, embed, generate):
+    def test_returns_answer_with_citations(self, embed, ask):
         document = make_ready_document(self.workspace, title="Employee Handbook")
         chunk = make_chunk(
             document,
@@ -42,8 +44,8 @@ class SuccessfulAnswerTests(AskTestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["answer"], "You get 20 vacation days [1].")
-        self.assertEqual(body["model"], settings.ASK_LLM_MODEL)
+        self.assertEqual(body["answer"], ANSWER)
+        self.assertEqual(body["model"], "fake")
         self.assertEqual(len(body["citations"]), 1)
 
         citation = body["citations"][0]
@@ -51,20 +53,34 @@ class SuccessfulAnswerTests(AskTestCase):
         self.assertEqual(citation["document_id"], document.id)
         self.assertEqual(citation["document_title"], "Employee Handbook")
         self.assertEqual(citation["page"], 12)
-        self.assertIsNone(citation["slide"])
-        self.assertIsNone(citation["row_start"])
-        self.assertIsNone(citation["row_end"])
+        self.assertEqual(citation["section"], "")
         self.assertEqual(citation["text"], chunk.text)
         self.assertAlmostEqual(citation["score"], 1.0)
 
-        generate.assert_called_once()
-        question, sources = generate.call_args.args
-        self.assertEqual(question, "How many vacation days do I get?")
-        self.assertEqual(sources[0].text, chunk.text)
+    def test_sends_the_question_and_excerpts_to_the_llm(self, embed, ask):
+        document = make_ready_document(self.workspace, title="Employee Handbook")
+        make_chunk(document, text="20 days of paid vacation.", page=12)
 
-    def test_saves_question_answer_model_and_citations(self, embed, generate):
+        self.ask("How many vacation days?")
+
+        prompt, instructions, provider = ask.call_args.args
+        self.assertIn("Question: How many vacation days?", prompt)
+        self.assertIn("[1] Employee Handbook, page 12\n20 days of paid vacation.", prompt)
+        self.assertIn("only the numbered document excerpts", instructions)
+        self.assertEqual(provider, "openai")
+
+    def test_docx_excerpts_are_labelled_with_their_heading(self, embed, ask):
+        document = make_ready_document(self.workspace, title="Benefits")
+        make_chunk(document, section="Dental", page=3)
+
+        self.ask()
+
+        prompt = ask.call_args.args[0]
+        self.assertIn("[1] Benefits, Dental\n", prompt)
+
+    def test_saves_question_answer_model_and_citations(self, embed, ask):
         document = make_ready_document(self.workspace)
-        chunk = make_chunk(document, row_start=4, row_end=6)
+        chunk = make_chunk(document, section="Dental")
 
         response = self.ask("What is the policy?")
 
@@ -72,19 +88,20 @@ class SuccessfulAnswerTests(AskTestCase):
         self.assertEqual(record.workspace, self.workspace)
         self.assertEqual(record.user, self.user)
         self.assertEqual(record.question, "What is the policy?")
-        self.assertEqual(record.answer, "You get 20 vacation days [1].")
-        self.assertEqual(record.model_name, settings.ASK_LLM_MODEL)
+        self.assertEqual(record.answer, ANSWER)
+        self.assertEqual(record.model_name, "fake")
         self.assertTrue(record.used_llm)
 
         citation = Citation.objects.get(answer=record)
         self.assertEqual(citation.chunk, chunk)
+        self.assertEqual(citation.section, "Dental")
         self.assertEqual(citation.rank, 1)
         self.assertAlmostEqual(citation.score, 1.0)
 
-    def test_admin_can_ask(self, embed, generate):
+    def test_admin_can_ask(self, embed, ask):
         self.assertEqual(self.ask(user=make_admin()).status_code, 200)
 
-    def test_only_ready_documents_are_searched(self, embed, generate):
+    def test_only_ready_documents_from_your_workspace_are_searched(self, embed, ask):
         ready = make_ready_document(self.workspace, title="Ready")
         make_chunk(ready, text="Ready text.")
 
@@ -101,22 +118,99 @@ class SuccessfulAnswerTests(AskTestCase):
         citations = response.json()["citations"]
         self.assertEqual([c["document_title"] for c in citations], ["Ready"])
 
-    def test_chunks_below_the_cutoff_are_not_cited(self, embed, generate):
+    def test_best_match_comes_first(self, embed, ask):
         document = make_ready_document(self.workspace)
-        make_chunk(document, text="Good match.", chunk_index=0, embedding=vector(0))
-        make_chunk(document, text="Unrelated.", chunk_index=1, embedding=vector(1))
+        # Cosine similarity 0.8 with vector(0)
+        close = vector(0)
+        close[0], close[1] = 0.8, 0.6
+        make_chunk(document, text="Close.", order=0, embedding=close)
+        make_chunk(document, text="Exact.", order=1, embedding=vector(0))
+
+        citations = self.ask().json()["citations"]
+
+        self.assertEqual([c["text"] for c in citations], ["Exact.", "Close."])
+        self.assertAlmostEqual(citations[1]["score"], 0.8, places=5)
+
+    @override_settings(ASK_MAX_CONTEXT_CHUNKS=2)
+    def test_sends_at_most_ask_max_context_chunks(self, embed, ask):
+        document = make_ready_document(self.workspace)
+        for order in range(3):
+            make_chunk(document, order=order)
+
+        self.assertEqual(len(self.ask().json()["citations"]), 2)
+
+    def test_chunks_below_the_cutoff_are_not_cited(self, embed, ask):
+        document = make_ready_document(self.workspace)
+        make_chunk(document, text="Good match.", order=0, embedding=vector(0))
+        make_chunk(document, text="Unrelated.", order=1, embedding=vector(1))
 
         response = self.ask()
 
         self.assertEqual([c["text"] for c in response.json()["citations"]], ["Good match."])
 
-    def test_row_range_is_returned(self, embed, generate):
-        document = make_ready_document(self.workspace)
-        make_chunk(document, row_start=2, row_end=8)
 
-        citation = self.ask().json()["citations"][0]
-        self.assertEqual(citation["row_start"], 2)
-        self.assertEqual(citation["row_end"], 8)
+@patch("core.llm.ask", return_value=ANSWER)
+@patch("core.llm.embed", return_value=[vector(0)])
+class AnswerProviderTests(AskTestCase):
+    def setUp(self):
+        super().setUp()
+        make_chunk(make_ready_document(self.workspace))
+
+    def use_gemini(self):
+        self.workspace.answer_provider = "gemini"
+        self.workspace.save()
+
+    def test_uses_the_workspace_provider(self, embed, ask):
+        self.use_gemini()
+
+        self.ask()
+
+        self.assertEqual(ask.call_args.args[2], "gemini")
+
+    @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test", CHAT_MODEL="gpt-test")
+    def test_saves_the_openai_model_name(self, embed, ask):
+        self.assertEqual(self.ask().json()["model"], "gpt-test")
+
+    @override_settings(LLM_PROVIDER="openai", GEMINI_API_KEY="gm-test", GEMINI_CHAT_MODEL="gemini-test")
+    def test_saves_the_gemini_model_name(self, embed, ask):
+        self.use_gemini()
+
+        self.assertEqual(self.ask().json()["model"], "gemini-test")
+
+
+@patch("core.llm.ask", return_value=ANSWER)
+@patch("core.llm.embed", return_value=[vector(0)])
+class SavedCitationTests(AskTestCase):
+    def setUp(self):
+        super().setUp()
+        self.document = make_ready_document(self.workspace, title="Employee Handbook")
+        make_chunk(self.document, text="20 days of paid vacation.", page=12)
+
+    def assert_keeps_its_source(self, citation):
+        self.assertEqual(citation.document_title, "Employee Handbook")
+        self.assertEqual(citation.page, 12)
+        self.assertEqual(citation.text, "20 days of paid vacation.")
+
+    def test_survives_the_document_being_processed_again(self, embed, ask):
+        answer_id = self.ask().json()["id"]
+
+        # Processing again replaces the chunks
+        Chunk.objects.filter(document=self.document).delete()
+
+        citation = Citation.objects.get(answer_id=answer_id)
+        self.assertIsNone(citation.chunk)
+        self.assertEqual(citation.document, self.document)
+        self.assert_keeps_its_source(citation)
+
+    def test_survives_the_document_being_deleted(self, embed, ask):
+        answer_id = self.ask().json()["id"]
+
+        self.document.delete()
+
+        citation = Citation.objects.get(answer_id=answer_id)
+        self.assertIsNone(citation.chunk)
+        self.assertIsNone(citation.document)
+        self.assert_keeps_its_source(citation)
 
 
 class AskPermissionsTests(AskTestCase):
@@ -129,13 +223,7 @@ class AskPermissionsTests(AskTestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_blank_question_gets_422(self):
-        token = create_access_token(self.user)
-        response = self.client.post(
-            "/api/ask",
-            {"question": "   "},
-            content_type="application/json",
-            headers=auth_header(token),
-        )
+        response = self.ask("   ")
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json(), {"detail": "Ask a question."})
 
@@ -150,10 +238,10 @@ class AskPermissionsTests(AskTestCase):
         self.assertEqual(response.status_code, 422)
 
 
-@patch("ask.services.generate_answer")
-@patch("ask.services.embed_question", return_value=vector(0))
+@patch("core.llm.ask")
+@patch("core.llm.embed", return_value=[vector(0)])
 class NoGoodMatchTests(AskTestCase):
-    def test_below_cutoff_skips_the_llm_and_returns_no_citations(self, embed, generate):
+    def test_below_cutoff_skips_the_llm_and_returns_no_citations(self, embed, ask):
         document = make_ready_document(self.workspace)
         make_chunk(document, embedding=vector(1))
 
@@ -164,22 +252,22 @@ class NoGoodMatchTests(AskTestCase):
         self.assertEqual(body["answer"], NO_ANSWER)
         self.assertEqual(body["model"], "")
         self.assertEqual(body["citations"], [])
-        generate.assert_not_called()
+        ask.assert_not_called()
 
         record = Answer.objects.get(pk=body["id"])
         self.assertFalse(record.used_llm)
         self.assertFalse(record.citations.exists())
 
-    def test_no_chunks_skips_embedding_and_the_llm(self, embed, generate):
+    def test_no_chunks_skips_embedding_and_the_llm(self, embed, ask):
         response = self.ask()
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["answer"], NO_ANSWER)
         self.assertEqual(response.json()["citations"], [])
         embed.assert_not_called()
-        generate.assert_not_called()
+        ask.assert_not_called()
 
-    def test_only_unready_documents_skips_the_llm(self, embed, generate):
+    def test_only_unready_documents_skips_the_llm(self, embed, ask):
         document = make_document(self.workspace)
         make_chunk(document)
 
@@ -188,18 +276,15 @@ class NoGoodMatchTests(AskTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["answer"], NO_ANSWER)
         embed.assert_not_called()
-        generate.assert_not_called()
+        ask.assert_not_called()
 
 
 class ProviderFailureTests(AskTestCase):
-    @patch("ask.services.generate_answer", side_effect=ProviderError("down"))
-    @patch("ask.services.embed_question", return_value=vector(0))
-    def test_llm_outage_returns_clear_502(self, embed, generate):
-        document = make_ready_document(self.workspace)
-        make_chunk(document)
+    def setUp(self):
+        super().setUp()
+        make_chunk(make_ready_document(self.workspace))
 
-        response = self.ask()
-
+    def assert_clear_502(self, response):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(
             response.json(),
@@ -207,31 +292,30 @@ class ProviderFailureTests(AskTestCase):
         )
         self.assertFalse(Answer.objects.exists())
 
-    @patch("ask.services.embed_question", side_effect=ProviderError("down"))
+    @patch("core.llm.ask", side_effect=LLMError("down"))
+    @patch("core.llm.embed", return_value=[vector(0)])
+    def test_llm_outage_returns_clear_502(self, embed, ask):
+        self.assert_clear_502(self.ask())
+
+    @patch("core.llm.embed", side_effect=LLMError("down"))
     def test_embedding_outage_returns_clear_502(self, embed):
-        document = make_ready_document(self.workspace)
-        make_chunk(document)
+        self.assert_clear_502(self.ask())
 
-        response = self.ask()
+    @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="")
+    def test_missing_key_returns_clear_502(self):
+        self.assert_clear_502(self.ask())
 
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json(),
-            {"detail": "The answer service is unavailable. Please try again."},
+
+class AskStreamTests(AskTestCase):
+    def test_is_not_built_yet(self):
+        response = self.ask(path="/api/ask/stream")
+        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.json(), {"detail": "Streaming answers aren't available yet."})
+
+    def test_no_token_gets_401(self):
+        response = self.client.post(
+            "/api/ask/stream",
+            {"question": "Anything?"},
+            content_type="application/json",
         )
-        self.assertFalse(Answer.objects.exists())
-
-
-class MissingConfigurationTests(AskTestCase):
-    @override_settings(GEMINI_API_KEY="", ASK_EMBEDDING_API_KEY="", ASK_LLM_API_KEY="")
-    def test_unconfigured_service_returns_502(self):
-        document = make_ready_document(self.workspace)
-        make_chunk(document)
-
-        response = self.ask()
-
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json(),
-            {"detail": "The answer service is unavailable. Please try again."},
-        )
+        self.assertEqual(response.status_code, 401)

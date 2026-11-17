@@ -89,24 +89,8 @@ SEED_EMPLOYEE_PASSWORD = env("SEED_EMPLOYEE_PASSWORD", default="")
 # Biggest upload POST /api/documents accepts.
 DOCUMENT_MAX_UPLOAD_MB = env.int("DOCUMENT_MAX_UPLOAD_MB", default=16)
 
-# POST /api/ask: retrieval and an OpenAI-compatible embedding/chat provider.
-# Defaults use the Google Gemini free tier. Set GEMINI_API_KEY once, or use the
-# ASK_* keys/URLs to point at any other OpenAI-compatible provider.
-GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
-GEMINI_BASE_URL = env(
-    "GEMINI_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai"
-)
-ASK_EMBEDDING_MODEL = env("ASK_EMBEDDING_MODEL", default="gemini-embedding-2")
-ASK_EMBEDDING_DIMENSIONS = env.int("ASK_EMBEDDING_DIMENSIONS", default=3072)
-ASK_EMBEDDING_API_KEY = env("ASK_EMBEDDING_API_KEY", default="") or GEMINI_API_KEY
-ASK_EMBEDDING_BASE_URL = env("ASK_EMBEDDING_BASE_URL", default=GEMINI_BASE_URL)
-ASK_EMBEDDING_TIMEOUT_SECONDS = env.int("ASK_EMBEDDING_TIMEOUT_SECONDS", default=10)
-ASK_LLM_MODEL = env("ASK_LLM_MODEL", default="gemini-3.1-flash-lite")
-ASK_LLM_API_KEY = env("ASK_LLM_API_KEY", default="") or GEMINI_API_KEY
-ASK_LLM_BASE_URL = env("ASK_LLM_BASE_URL", default=GEMINI_BASE_URL)
-ASK_LLM_TIMEOUT_SECONDS = env.int("ASK_LLM_TIMEOUT_SECONDS", default=30)
-ASK_MAX_ANSWER_TOKENS = env.int("ASK_MAX_ANSWER_TOKENS", default=1024)
-ASK_MAX_CONTEXT_CHUNKS = env.int("ASK_MAX_CONTEXT_CHUNKS", default=6)
+# POST /api/ask. Below the cutoff (0 to 1) it answers "not found" without the LLM.
+ASK_MAX_CONTEXT_CHUNKS = env.int("ASK_MAX_CONTEXT_CHUNKS", default=5)
 ASK_SIMILARITY_CUTOFF = env.float("ASK_SIMILARITY_CUTOFF", default=0.35)
 
 # Background jobs. The worker is "python manage.py run_huey".
@@ -124,6 +108,12 @@ LLM_PROVIDER = env("LLM_PROVIDER", default="fake")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 EMBEDDING_MODEL = env("EMBEDDING_MODEL", default="text-embedding-3-small")
 CHAT_MODEL = env("CHAT_MODEL", default="gpt-5-mini")
+# Gemini can write answers too (Settings in the UI). Free key: https://aistudio.google.com/apikey
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
+GEMINI_BASE_URL = env(
+    "GEMINI_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai"
+)
+GEMINI_CHAT_MODEL = env("GEMINI_CHAT_MODEL", default="gemini-3.1-flash-lite")
 LLM_TIMEOUT_SECONDS = env.int("LLM_TIMEOUT_SECONDS", default=50)
 # How many chunks go in one embeddings request.
 EMBED_BATCH_SIZE = env.int("EMBED_BATCH_SIZE", default=100)

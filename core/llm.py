@@ -1,6 +1,8 @@
 """
-All LLM and embedding calls go through here. To add a provider, add a class
-with embed() and ask() and pick it in get_provider().
+All LLM and embedding calls go through here.
+
+Embeddings always use OpenAI. Answers use OpenAI or Gemini, picked per workspace.
+LLM_PROVIDER=fake swaps every call for a fake one (tests, no key).
 """
 
 import hashlib
@@ -27,17 +29,18 @@ def embed(texts):
     batch_size = settings.EMBED_BATCH_SIZE
     vectors = []
     for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
+        batch = texts[start: start + batch_size]
         vectors.extend(provider.embed(batch))
     return vectors
 
 
-def ask(prompt):
-    """Sends one prompt and returns the answer text."""
-    return get_provider().ask(prompt)
+def ask(prompt, instructions="", provider="openai"):
+    """Sends one prompt and returns the answer text. provider is "openai" or "gemini"."""
+    return get_answer_provider(provider).ask(prompt, instructions)
 
 
 def get_provider():
+    """The one used for embeddings."""
     name = settings.LLM_PROVIDER
     if name == "fake":
         return FakeProvider()
@@ -46,13 +49,45 @@ def get_provider():
     raise LLMError(f"Unknown LLM_PROVIDER: {name}")
 
 
+# Who can write answers. The keys match Workspace.AnswerProvider.
+ANSWER_PROVIDERS = {"openai": "OpenAI", "gemini": "Gemini"}
+
+
+def get_answer_provider(name):
+    if name not in ANSWER_PROVIDERS:
+        raise LLMError(f"Unknown answer provider: {name}")
+    if settings.LLM_PROVIDER == "fake":
+        return FakeProvider()
+    if name == "gemini":
+        return GeminiProvider()
+    return OpenAIProvider()
+
+
+def has_key(name):
+    """True if the server can use this answer provider."""
+    if settings.LLM_PROVIDER == "fake":
+        return True
+    if name == "gemini":
+        return bool(settings.GEMINI_API_KEY)
+    return bool(settings.OPENAI_API_KEY)
+
+
+def answer_model(name):
+    """The model name we save with each answer."""
+    if settings.LLM_PROVIDER == "fake":
+        return "fake"
+    if name == "gemini":
+        return settings.GEMINI_CHAT_MODEL
+    return settings.CHAT_MODEL
+
+
 class FakeProvider:
     """For tests and for running without a key. No network."""
 
     def embed(self, texts):
         return [fake_vector(text) for text in texts]
 
-    def ask(self, prompt):
+    def ask(self, prompt, instructions=""):
         return f"Fake answer to: {prompt[:200]}"
 
 
@@ -91,10 +126,40 @@ class OpenAIProvider:
             raise LLMError("The embedding service didn't answer. Try again later.") from error
         return [item.embedding for item in response.data]
 
-    def ask(self, prompt):
+    def ask(self, prompt, instructions=""):
+        # Only send instructions when there are some
+        extra = {"instructions": instructions} if instructions else {}
         try:
-            response = self.client.responses.create(model=settings.CHAT_MODEL, input=prompt)
+            response = self.client.responses.create(
+                model=settings.CHAT_MODEL, input=prompt, **extra
+            )
         except openai.OpenAIError as error:
             logger.warning("OpenAI answer failed: %r", error)
             raise LLMError("The AI service didn't answer. Try again later.") from error
         return response.output_text
+
+
+class GeminiProvider:
+    """Answers only. Gemini has an OpenAI-compatible endpoint, so it's the same client."""
+
+    def __init__(self):
+        if not settings.GEMINI_API_KEY:
+            raise LLMError("GEMINI_API_KEY is not set.")
+        self.client = openai.OpenAI(
+            api_key=settings.GEMINI_API_KEY,
+            base_url=settings.GEMINI_BASE_URL,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+        )
+
+    def ask(self, prompt, instructions=""):
+        messages = [{"role": "user", "content": prompt}]
+        if instructions:
+            messages.insert(0, {"role": "system", "content": instructions})
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.GEMINI_CHAT_MODEL, messages=messages
+            )
+        except openai.OpenAIError as error:
+            logger.warning("Gemini answer failed: %r", error)
+            raise LLMError("The AI service didn't answer. Try again later.") from error
+        return response.choices[0].message.content or ""

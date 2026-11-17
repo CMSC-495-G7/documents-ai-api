@@ -1,10 +1,10 @@
 from ninja import Router
 from ninja.errors import HttpError
 
-from ask.providers import ProviderError
-from ask.schemas import AskIn, AskOut
+from ask.schemas import AskIn, AskOut, AskSettingsIn, AskSettingsOut
 from ask.services import ask_question
-from users.permissions import IsEmployeeOrAdmin
+from core import llm
+from users.permissions import IsAdmin, IsEmployeeOrAdmin
 from users.schemas import ErrorOut
 
 router = Router(tags=["Ask"])
@@ -24,14 +24,45 @@ def ask(request, payload: AskIn):
 
     try:
         answer = ask_question(request.auth, question)
-    except ProviderError:
+    except llm.LLMError:
         raise HttpError(502, UNAVAILABLE)
 
     return {
         "id": answer.id,
         "answer": answer.answer,
         "model": answer.model_name,
-        "citations": list(
-            answer.citations.select_related("chunk__document")
-        ),
+        "citations": list(answer.citations.all()),
     }
+
+
+@router.post("/stream", auth=IsEmployeeOrAdmin(), response={501: ErrorOut})
+def ask_stream(request, payload: AskIn):
+    # TODO: Placeholder. Will stream the answer word by word, OpenAI only
+    raise HttpError(501, "Streaming answers aren't available yet.")
+
+
+def settings_for(workspace):
+    providers = [
+        {"id": name, "label": label, "available": llm.has_key(name)}
+        for name, label in llm.ANSWER_PROVIDERS.items()
+    ]
+    return {"answer_provider": workspace.answer_provider, "providers": providers}
+
+
+@router.get("/settings", auth=IsEmployeeOrAdmin(), response=AskSettingsOut)
+def get_settings(request):
+    return settings_for(request.auth.workspace)
+
+
+@router.patch("/settings", auth=IsAdmin(), response={200: AskSettingsOut, 422: ErrorOut})
+def update_settings(request, payload: AskSettingsIn):
+    provider = payload.answer_provider
+    if provider not in llm.ANSWER_PROVIDERS:
+        raise HttpError(422, "Pick OpenAI or Gemini.")
+    if not llm.has_key(provider):
+        raise HttpError(422, f"{llm.ANSWER_PROVIDERS[provider]} has no API key on the server.")
+
+    workspace = request.auth.workspace
+    workspace.answer_provider = provider
+    workspace.save(update_fields=["answer_provider"])
+    return settings_for(workspace)
