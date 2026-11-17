@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from ninja import Schema
@@ -25,6 +26,14 @@ class AskOut(Schema):
     answer: str
     model: str
     citations: list[CitationOut]
+    
+
+class AskHistoryOut(Schema):
+    id: int
+    question: str
+    answer: str
+    model: str
+    created_at: datetime
 
 
 class ProviderOut(Schema):
