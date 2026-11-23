@@ -2,6 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
+import openai
+
 from django.db import connections
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 
@@ -392,6 +395,30 @@ class ProviderFailureTests(AskTestCase):
             with self.subTest(choices=choices):
                 completion.return_value = SimpleNamespace(choices=choices)
                 self.assert_clear_502(self.ask())
+
+    @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test")
+    @patch("core.llm.openai.OpenAI")
+    def test_rate_limited_answer_returns_clear_502(self, client_class):
+        client = client_class.return_value
+        client.embeddings.create.return_value = SimpleNamespace(data=[SimpleNamespace(embedding=vector(0))])
+        request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        client.with_options.return_value.responses.create.side_effect = openai.RateLimitError(
+            "Rate limit reached", response=httpx.Response(429, request=request), body=None
+        )
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertLogs("ask.api", "WARNING"):
+            self.assert_clear_502(self.ask())
+
+    @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test")
+    @patch("core.llm.openai.OpenAI")
+    def test_unavailable_embedding_service_returns_clear_502(self, client_class):
+        request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+        client_class.return_value.embeddings.create.side_effect = openai.InternalServerError(
+            "Service unavailable", response=httpx.Response(503, request=request), body=None
+        )
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertLogs("ask.api", "WARNING"):
+            self.assert_clear_502(self.ask())
 
     @override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="")
     def test_missing_key_returns_clear_502(self):

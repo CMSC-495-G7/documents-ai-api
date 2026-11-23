@@ -264,6 +264,52 @@ class TaskTests(ProcessingTestCase):
         queued.refresh_from_db()
         self.assertEqual(queued.status, Status.QUEUED)
 
+    def test_second_job_skips_while_the_first_holds_the_claim(self):
+        document = make_saved_document(self.workspace, pdf_with("Dental"))
+        calls = []
+
+        def embed_while_a_duplicate_arrives(texts):
+            calls.append(texts)
+            # The same job delivered again while this one is still working
+            if len(calls) == 1:
+                process_document(document.pk)
+            return [[0.1] * EMBEDDING_DIMENSIONS for _ in texts]
+
+        with patch("core.llm.embed", side_effect=embed_while_a_duplicate_arrives):
+            process_document(document.pk)
+
+        self.assertEqual(len(calls), 1)
+        document.refresh_from_db()
+        self.assertEqual(document.status, Status.READY)
+        self.assertEqual(document.chunks.count(), 1)
+
+    def test_recovery_never_requeues_a_document_a_slow_worker_owns(self):
+        document = make_saved_document(self.workspace, pdf_with("Dental"))
+        set_status(document, Status.PROCESSING)
+
+        # Recovery runs every minute, the worker is still inside its lease
+        with patch("documents.tasks.process_document") as enqueue:
+            for _ in range(3):
+                recover_documents.call_local()
+
+        enqueue.assert_not_called()
+        document.refresh_from_db()
+        self.assertEqual(document.status, Status.PROCESSING)
+
+    def test_recovered_document_is_processed_once(self):
+        document = make_saved_document(self.workspace, pdf_with("Dental"))
+        Document.objects.filter(pk=document.pk).update(
+            updated_at=timezone.now() - QUEUE_RECOVERY_DELAY,
+        )
+
+        with patch("core.llm.embed", return_value=[[0.1] * EMBEDDING_DIMENSIONS]) as embed:
+            recover_documents.call_local()
+            recover_documents.call_local()
+
+        embed.assert_called_once()
+        document.refresh_from_db()
+        self.assertEqual(document.status, Status.READY)
+
     def test_expired_worker_cannot_overwrite_the_recovered_chunks(self):
         document = make_saved_document(self.workspace, pdf_with("Dental"))
 

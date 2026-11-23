@@ -1,0 +1,22 @@
+[
+  {"id": "A01", "kind": "answerable", "question": "How many days after an expense is incurred must it be submitted for reimbursement?", "document": "FINA 2.30.015 Expense and Reimbursement CLEAN for Posting", "pages": [6]},
+  {"id": "A02", "kind": "answerable", "question": "How far in advance should travel be booked?", "document": "FINA 2.30.015 Expense and Reimbursement CLEAN for Posting", "pages": [2, 5]},
+  {"id": "A03", "kind": "answerable", "question": "When can employees request a cash advance?", "document": "FINA 2.30.015 Expense and Reimbursement CLEAN for Posting", "pages": [3]},
+  {"id": "A04", "kind": "answerable", "question": "How many days per week can employees work remotely?", "document": "Remote-Work-POLICY", "pages": [3]},
+  {"id": "A05", "kind": "answerable", "question": "Who gives final approval for a remote work agreement?", "document": "Remote-Work-POLICY", "pages": [8]},
+  {"id": "A06", "kind": "answerable", "question": "How much notice should departments give before terminating a remote work agreement?", "document": "Remote-Work-POLICY", "pages": [7, 8]},
+  {"id": "A07", "kind": "answerable", "question": "How many weeks of FMLA leave are eligible staff entitled to?", "document": "staff-handbook-california", "pages": [37]},
+  {"id": "A08", "kind": "answerable", "question": "How long must an employee have worked to be eligible for FMLA?", "document": "staff-handbook-california", "pages": [37]},
+  {"id": "A09", "kind": "answerable", "question": "Within how many days of hire must employment eligibility be verified?", "document": "staff-handbook-california", "pages": [9]},
+  {"id": "A10", "kind": "answerable", "question": "When should an employee report a work-related injury?", "document": "staff-handbook-california", "pages": [36]},
+  {"id": "A11", "kind": "answerable", "question": "What tuition benefits are available?", "document": "staff-handbook-california", "pages": [31, 32]},
+  {"id": "A12", "kind": "answerable", "question": "How much paid sick leave is provided?", "document": "staff-handbook-california", "pages": [34, 35]},
+  {"id": "A13", "kind": "answerable", "question": "How many weeks of paid parental leave are available to all parents?", "document": "staff-loa-policy", "pages": [5, 6]},
+  {"id": "A14", "kind": "answerable", "question": "What is the maximum military caregiver leave?", "document": "staff-loa-policy", "pages": [3]},
+  {"id": "A15", "kind": "answerable", "question": "What should be prepared before a new employee's first day?", "document": "wfp-onboarding-checklist", "pages": [1, 2]},
+  {"id": "U01", "kind": "unanswerable", "question": "What is the capital of France?"},
+  {"id": "U02", "kind": "unanswerable", "question": "What is the CEO's salary?"},
+  {"id": "U03", "kind": "unanswerable", "question": "What is the office Wi-Fi password?"},
+  {"id": "U04", "kind": "unanswerable", "question": "How many students are enrolled at the university?"},
+  {"id": "U05", "kind": "unanswerable", "question": "What is the weather forecast for tomorrow?"}
+]

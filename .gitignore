@@ -13,6 +13,8 @@ dump.rdb
 appendonly.aof
 
 # Python tooling and builds
+__pycache__/
+*.pyc
 venv/
 env/
 .mypy_cache/
