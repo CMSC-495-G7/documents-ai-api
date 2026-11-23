@@ -4,6 +4,9 @@ Local Django Ninja API with PostgreSQL 17 and pgvector. This is a development
 scaffold: health checks, interactive API documentation, sign-in, document upload,
 background document ingestion, and question answering are available.
 
+To check the Alpha release end to end (setup, all tests, the main workflow and the
+AI evaluation), follow [VERIFY.md](VERIFY.md).
+
 ## Django apps
 
 - `core`: API health checks and the migration that enables pgvector.
@@ -146,6 +149,17 @@ docker compose exec api python manage.py test
 
 Tests create and remove a separate test database. They check the health and
 readiness endpoints, API docs, database failures, and a real pgvector operation.
+`ask/tests/test_workflow.py` runs the whole flow through the API (upload, processing,
+ask, citation, history, file) and its failure cases, and `ask/tests/test_migrations.py`
+upgrades a database that still has the old `ask_chunk` rows.
+
+## Evaluate answer quality
+
+The 20-question evaluation set and how to run it are in [evals/README.md](evals/README.md):
+
+```sh
+bash scripts/run-eval.sh
+```
 
 ## Settings and troubleshooting
 

@@ -15,6 +15,7 @@ from core.llm import (
     OpenAIProvider,
     answer_model,
     ask,
+    describe_error,
     embed,
     fake_vector,
     get_answer_provider,
@@ -286,3 +287,112 @@ class GeminiProviderTests(SimpleTestCase):
         with self.assertLogs("core.llm", "WARNING"), self.assertRaises(LLMError) as raised:
             ask("hello", provider="gemini")
         self.assertNotIn("gm-test", str(raised.exception))
+
+
+def status_error(error_class, status, message, url="https://api.openai.com/v1/responses"):
+    """An OpenAI error with an HTTP status, like the client raises for a 429 or 503."""
+    request = httpx.Request("POST", url)
+    return error_class(message, response=httpx.Response(status, request=request), body=None)
+
+
+def connection_error(url="https://api.openai.com/v1/responses"):
+    return openai.APIConnectionError(request=httpx.Request("POST", url))
+
+
+class DescribeErrorTests(SimpleTestCase):
+    def test_type_and_status(self):
+        error = status_error(openai.RateLimitError, 429, "Rate limit reached for sk-secret")
+        self.assertEqual(describe_error(error), "RateLimitError (429)")
+
+    def test_type_only_without_a_status(self):
+        self.assertEqual(describe_error(connection_error()), "APIConnectionError")
+
+    def test_never_includes_the_message(self):
+        error = status_error(openai.AuthenticationError, 401, "Incorrect API key provided: sk-secret")
+        self.assertNotIn("sk-secret", describe_error(error))
+
+
+@override_settings(LLM_PROVIDER="openai", OPENAI_API_KEY="sk-test", CHAT_MODEL="gpt-test")
+@patch("core.llm.openai.OpenAI")
+class OpenAIProviderFailureTests(SimpleTestCase):
+    """Rate limits, outages and lost connections all become LLMError (the API's 502)."""
+
+    def answers(self, client_class):
+        return client_class.return_value.with_options.return_value.responses.create
+
+    def test_answer_rate_limit_becomes_llm_error(self, client_class):
+        self.answers(client_class).side_effect = status_error(openai.RateLimitError, 429, "Slow down")
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            ask("hello")
+
+    def test_embedding_rate_limit_becomes_llm_error(self, client_class):
+        client_class.return_value.embeddings.create.side_effect = status_error(
+            openai.RateLimitError, 429, "Slow down", "https://api.openai.com/v1/embeddings"
+        )
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            embed(["hello"])
+
+    def test_service_unavailable_becomes_llm_error(self, client_class):
+        self.answers(client_class).side_effect = status_error(openai.InternalServerError, 503, "Overloaded")
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            ask("hello")
+
+    def test_lost_connection_becomes_llm_error(self, client_class):
+        self.answers(client_class).side_effect = connection_error()
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            ask("hello")
+
+    def test_logs_the_error_type_not_the_message(self, client_class):
+        self.answers(client_class).side_effect = status_error(
+            openai.AuthenticationError, 401, "Incorrect API key provided: sk-secret"
+        )
+
+        with self.assertLogs("core.llm", "WARNING") as logs, self.assertRaises(LLMError):
+            ask("hello")
+
+        self.assertIn("AuthenticationError (401)", logs.output[0])
+        self.assertNotIn("sk-secret", logs.output[0])
+
+    def test_embedding_logs_the_error_type_not_the_message(self, client_class):
+        client_class.return_value.embeddings.create.side_effect = status_error(
+            openai.RateLimitError, 429, "Limit reached for org-secret", "https://api.openai.com/v1/embeddings"
+        )
+
+        with self.assertLogs("core.llm", "WARNING") as logs, self.assertRaises(LLMError):
+            embed(["hello"])
+
+        self.assertIn("RateLimitError (429)", logs.output[0])
+        self.assertNotIn("org-secret", logs.output[0])
+
+
+@override_settings(
+    LLM_PROVIDER="openai",
+    GEMINI_API_KEY="gm-test",
+    GEMINI_BASE_URL="https://gemini.example/openai",
+    GEMINI_CHAT_MODEL="gemini-test",
+)
+@patch("core.llm.openai.OpenAI")
+class GeminiProviderFailureTests(SimpleTestCase):
+    def test_rate_limit_becomes_llm_error(self, client_class):
+        client_class.return_value.chat.completions.create.side_effect = status_error(
+            openai.RateLimitError, 429, "Quota exceeded", "https://gemini.example/openai/chat/completions"
+        )
+
+        with self.assertLogs("core.llm", "WARNING"), self.assertRaisesMessage(LLMError, "Try again later."):
+            ask("hello", provider="gemini")
+
+    def test_logs_the_error_type_not_the_message(self, client_class):
+        client_class.return_value.chat.completions.create.side_effect = status_error(
+            openai.AuthenticationError, 401, "API key not valid: gm-secret",
+            "https://gemini.example/openai/chat/completions",
+        )
+
+        with self.assertLogs("core.llm", "WARNING") as logs, self.assertRaises(LLMError):
+            ask("hello", provider="gemini")
+
+        self.assertIn("AuthenticationError (401)", logs.output[0])
+        self.assertNotIn("gm-secret", logs.output[0])

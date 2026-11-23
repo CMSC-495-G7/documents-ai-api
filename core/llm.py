@@ -23,6 +23,12 @@ class LLMError(Exception):
     """The provider failed. The message is safe to show people."""
 
 
+def describe_error(error):
+    status = getattr(error, "status_code", None)
+    name = type(error).__name__
+    return f"{name} ({status})" if status else name
+
+
 def embed(texts):
     """Returns one vector per text, in the same order. Sends them in batches."""
     provider = get_provider()
@@ -125,7 +131,7 @@ class OpenAIProvider:
                 dimensions=EMBEDDING_DIMENSIONS,
             )
         except openai.OpenAIError as error:
-            logger.warning("OpenAI embeddings failed: %r", error)
+            logger.warning("OpenAI embeddings failed: %s", describe_error(error))
             raise LLMError("The embedding service didn't answer. Try again later.") from error
         return [item.embedding for item in response.data]
 
@@ -137,7 +143,7 @@ class OpenAIProvider:
                 model=settings.CHAT_MODEL, input=prompt, **extra
             )
         except openai.OpenAIError as error:
-            logger.warning("OpenAI answer failed: %r", error)
+            logger.warning("OpenAI answer failed: %s", describe_error(error))
             raise LLMError("The AI service didn't answer. Try again later.") from error
         return response.output_text
 
@@ -164,7 +170,7 @@ class GeminiProvider:
                 model=settings.GEMINI_CHAT_MODEL, messages=messages
             )
         except openai.OpenAIError as error:
-            logger.warning("Gemini answer failed: %r", error)
+            logger.warning("Gemini answer failed: %s", describe_error(error))
             raise LLMError("The AI service didn't answer. Try again later.") from error
         choices = getattr(response, "choices", None)
         message = getattr(choices[0], "message", None) if choices else None

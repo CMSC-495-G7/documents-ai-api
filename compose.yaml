@@ -42,6 +42,8 @@ x-app: &app
     - ./users:/app/users
     - ./documents:/app/documents
     - ./ask:/app/ask
+    # Eval questions in, eval reports out (manage.py run_eval)
+    - ./evals:/app/evals
     # Uploaded files, kept across restarts. The worker reads them too.
     - uploads:/app/uploads
   depends_on:

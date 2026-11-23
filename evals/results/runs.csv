@@ -1,0 +1,2 @@
+date,commit,llm_provider,embedding_model,answer_model,cutoff,retrieval_hits,answerable,not_found,unanswerable,fast,total,slowest_seconds,report
+2026-11-23T05:46:12+00:00,5446364,openai,text-embedding-3-small,gpt-5-mini,0.4,13,15,5,5,20,20,11.96,20261123-054740-5446364.json
